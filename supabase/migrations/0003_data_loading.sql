@@ -13,3 +13,9 @@ language sql stable security definer set search_path = public as $$
   select dataset, to_char(max(created_at), 'YYYYMMDDHH24MISSMS'), count(*) from public.rows group by dataset
 $$;
 grant execute on function public.dataset_versions() to authenticated;
+
+-- 3) 페이지 조회 경로 인덱스 + 쿼리 시간 제한 완화 (기본 8초 → 60초; 무료 플랜 DB 가 느릴 때 끊기지 않도록)
+create index if not exists rows_ds_id on public.rows (dataset, id);
+alter role authenticated set statement_timeout = '60s';
+alter role anon set statement_timeout = '15s';
+notify pgrst, 'reload config';
