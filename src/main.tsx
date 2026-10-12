@@ -11,6 +11,8 @@ import Upload from './pages/Upload';
 import Employees from './pages/Employees';
 import History from './pages/History';
 import Placeholder from './pages/Placeholder';
+import { PATH_SCREEN } from './legacy/LegacyHost';
+import { useLocation } from 'react-router-dom';
 
 function Gate() {
   const { session, employee, loading } = useAuth();
@@ -29,10 +31,16 @@ function Gate() {
         <Route path="/settings/employees" element={isAdmin ? <Employees /> : <Navigate to="/" />} />
         <Route path="/settings/history" element={isAdmin ? <History /> : <Navigate to="/" />} />
         <Route path="/password" element={<ChangePassword />} />
-        <Route path="*" element={<Placeholder />} />
+        <Route path="*" element={<LegacyOrPlaceholder isAdmin={isAdmin} />} />
       </Route>
     </Routes>
   );
+}
+
+function LegacyOrPlaceholder({ isAdmin }: { isAdmin: boolean }) {
+  const loc = useLocation();
+  if (loc.pathname.startsWith('/settings') && !isAdmin) return <Navigate to="/" replace />;
+  return PATH_SCREEN[loc.pathname] ? null : <Placeholder />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

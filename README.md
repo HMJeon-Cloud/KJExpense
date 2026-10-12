@@ -8,7 +8,8 @@ kjhub/
 │  ├─ lib/supabase.ts   Supabase 클라이언트, 데이터셋 정의
 │  ├─ lib/auth.tsx      사원 ID 로그인 · 최초 비밀번호 변경
 │  ├─ components/       레이아웃(탭·드롭다운), 토스트·확인창
-│  └─ pages/            로그인 / 데이터 업로드 / 사원 관리 / 변경 이력·복구 / (3단계에서 추가될 화면)
+│  ├─ pages/            로그인 / 데이터 업로드 / 사원 관리 / 변경 이력·복구
+│  └─ legacy/           기존 조회·설정 화면 (Apps Script 판 그대로) + Supabase 연결 셸(hub.js)·서버 함수 셈(gsShim.js)
 ├─ supabase/
 │  ├─ migrations/0001_schema.sql        테이블·RLS·함수 (SQL Editor 에서 실행)
 │  └─ migrations/0002_login.sql         최초 관리자·첫 로그인 계정 생성·초기화·삭제 함수
