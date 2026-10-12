@@ -1,4 +1,0 @@
-{
- "_설명": "단지별 청약 조건 (v9.20.3). 키는 청약홈 주택관리번호(HOUSE_MANAGE_NO, 단지 상세의 '관리번호'). 값은 공고문에서 옮긴 조건 — res(거주지 요건) resPeriod(거주 기간) prior(지역 우선 비율·순서) resale(전매 제한) live(실거주 의무) rewin(재당첨 제한) firstRank(1순위 요건) point(가점·추첨 비율) down(계약금) mid(중도금) balance(잔금) option(발코니·옵션) move(입주) etc(특이 조건) src(출처·쪽) asOf(확인일). 앱의 '조건 적기'에서 쓰고 'JSON 복사'한 것을 여기에 붙이면 모두에게 보입니다. 빈 항목은 카드에서 빠집니다.",
- "notes": {}
-}
