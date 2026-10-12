@@ -11,6 +11,16 @@ import Upload from './pages/Upload';
 import Employees from './pages/Employees';
 import History from './pages/History';
 import Placeholder from './pages/Placeholder';
+import BuDashboard from './pages/BuDashboard';
+import DeptDashboard from './pages/DeptDashboard';
+import DeptCost from './pages/DeptCost';
+import Trade from './pages/Trade';
+import MatInput from './pages/MatInput';
+import LotStock from './pages/LotStock';
+import DeptSupport from './pages/DeptSupport';
+import AllocGroups from './pages/AllocGroups';
+import AllocPrices from './pages/AllocPrices';
+import SupportSettings from './pages/SupportSettings';
 import { PATH_SCREEN } from './legacy/LegacyHost';
 import { useLocation } from 'react-router-dom';
 
@@ -31,6 +41,19 @@ function Gate() {
         <Route path="/settings/employees" element={isAdmin ? <Employees /> : <Navigate to="/" />} />
         <Route path="/settings/history" element={isAdmin ? <History /> : <Navigate to="/" />} />
         <Route path="/password" element={<ChangePassword />} />
+        <Route path="/bu" element={<BuDashboard variant="" title="국전 수익/비용" />} />
+        <Route path="/bu-real" element={<BuDashboard variant="-real" title="국전 수익/비용 (실현 수익)" />} />
+        <Route path="/bu-unit" element={<BuDashboard variant="-my" title="사업단위 수익/비용" />} />
+        <Route path="/dept" element={<DeptDashboard />} />
+        <Route path="/dept-cost" element={<DeptCost />} />
+        <Route path="/trade" element={<Trade />} />
+        <Route path="/matinput" element={<MatInput />} />
+        <Route path="/stock" element={<LotStock />} />
+        <Route path="/dept-support" element={<DeptSupport />} />
+        <Route path="/settings/alloc" element={isAdmin ? <AllocGroups /> : <Navigate to="/" />} />
+        <Route path="/settings/items" element={isAdmin ? <AllocPrices kind="items" /> : <Navigate to="/" />} />
+        <Route path="/settings/materials" element={isAdmin ? <AllocPrices kind="mats" /> : <Navigate to="/" />} />
+        <Route path="/settings/support" element={<SupportSettings />} />
         <Route path="*" element={<LegacyOrPlaceholder isAdmin={isAdmin} />} />
       </Route>
     </Routes>

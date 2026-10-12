@@ -60,7 +60,7 @@ export default function Layout() {
         <span className="sp" />
         <span className="user">
           <span className="avatar">{employee?.name?.slice(0, 1) ?? '?'}</span>
-          {employee?.name} · {employee?.dept} {employee?.grade}
+          <span className="who">{employee?.name} · {employee?.dept} {employee?.grade}</span>
           <button className="btn sm ghost" onClick={logout}>로그아웃</button>
         </span>
       </header>

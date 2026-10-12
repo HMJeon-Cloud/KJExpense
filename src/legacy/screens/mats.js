@@ -116,7 +116,7 @@ export default function init() {
   const ensureRec = code => draft.byMat[code] || (draft.byMat[code] = { sellBuyByMonth: {} });
   const pruneRec = code => { const r = draft.byMat[code]; if (r && !Object.keys(r.sellBuyByMonth || {}).length) delete draft.byMat[code]; };
   function isDirty() { return userEdited && JSON.stringify(draft.byMat) !== JSON.stringify(normMats(alloc.items || {})); }
-  function syncDirty() { const el = $a('amDirtyBadge'); if (el) el.classList.toggle('hidden', !isDirty()); }
+  function syncDirty() { const el = $a('amDirtyBadge'); if (el) el.classList.toggle('hidden', !isDirty()); matsNotify(); }
 
   function monthOptions() {
     const sel = $a('amMonth'); if (!sel) return;
@@ -280,6 +280,7 @@ export default function init() {
     }).withFailureHandler(err => {
       if (btn) { btn.disabled = false; btn.innerText = '저장'; }
       if (msg) { msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = err && err.message ? err.message : String(err); }
+      matsNotify();
     }).saveAllocation(tk, payload);
   }
   function load() {
@@ -300,6 +301,31 @@ export default function init() {
       if ($a('amSaveMsg')) { $a('amSaveMsg').className = 'text-xs font-semibold text-red-600'; $a('amSaveMsg').innerText = '설정을 불러오지 못했습니다: ' + (err && err.message ? err.message : String(err)); }
     }).getAllocation(tk);
   }
+
+  // ── 새 설정 화면(React) 브리지 ──
+  function matsNotify() { try { window.dispatchEvent(new CustomEvent('kjhub:cfg', { detail: { part: 'mats' } })); } catch (e) {} }
+  window.KJHub = window.KJHub || {}; window.KJHub.cfg = window.KJHub.cfg || {};
+  window.KJHub.cfg.mats = {
+    month: () => selMonth,
+    setMonth(m) { selMonth = m; render(); },
+    monthOptions() { const now = mIdx(curMonth()); const out = []; for (let i = now; i > now - 24; i--) out.push(mStr(i)); if (!out.includes(selMonth)) out.unshift(selMonth); return out; },
+    list() { ensureBase(); return baseList.map(e => ({ code: e.code, no: e.no, name: e.name, asset: e.asset, first: firstMonthOf(e.code) })); },
+    refPrice: (code, ym) => basePriceInfo(code, ym || selMonth),
+    value(code, ym) { if (!seeded) seedDraft(); const r = draft.byMat[code]; if (!r) return null; const v = (r.sellBuyByMonth || {})[ym || selMonth]; return v != null ? Number(v) : null; },
+    latestBefore(code, ym) { if (!seeded) seedDraft(); const st = ((draft.byMat[code] || {}).sellBuyByMonth) || {}; const yi = mIdx(ym || selMonth); const ks = Object.keys(st).filter(m => mIdx(m) < yi && st[m] != null).map(mIdx).sort((a, b) => b - a); return ks.length ? { m: mStr(ks[0]), v: Number(st[mStr(ks[0])]) } : null; },
+    setValue(code, v) { if (!seeded) seedDraft(); userEdited = true; const rec = ensureRec(code); if (v == null || v === '') delete rec.sellBuyByMonth[selMonth]; else rec.sellBuyByMonth[selMonth] = Number(v); pruneRec(code); syncDirty(); },
+    defaultPct: () => Number(draft.defaultPct) || 0,
+    setDefaultPct(v) { draft.defaultPct = Number(v) || 0; matsNotify(); },
+    dirty: () => isDirty(),
+    save: () => save('month'),
+    revert() { seedDraft(); render(); },
+    applyMonthAll() { applyBulk(baseList, [selMonth], mLbl(selMonth) + ' 기준월 적용', 'month'); },
+    applyEvery() { applyBulk(baseList, 'all', '전체 일괄 적용', 'all'); },
+    applyView(codes) { const set = Object.create(null); (codes || []).forEach(c => { set[c] = true; }); applyBulk(baseList.filter(e => set[e.code]), [selMonth], '조회 내역 적용(' + mLbl(selMonth) + ')', 'month'); },
+    prevMonth() { const b = $a('amPrevMonthBtn'); if (b) b.click(); },
+    msg() { const el = $a('amSaveMsg'); return el ? { text: el.innerText || '', cls: /red/.test(el.className) ? 'neg' : /emerald/.test(el.className) ? 'pos' : '' } : { text: '', cls: '' }; },
+    saving: () => { const b = $a('amSaveBtn'); return !!(b && b.disabled); },
+  };
 
   __onReady(() => {
     monthOptions();

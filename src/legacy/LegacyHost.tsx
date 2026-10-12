@@ -7,10 +7,12 @@ import * as lucide from 'lucide';
 import { useLocation, useNavigate } from 'react-router-dom';
 import sectionsHtml from './sections.html?raw';
 import './legacy.css';
+import './legacy-skin.css';
 import { KJHub, setNavHook, setUser, loadAll, loadForScreen, loadCloseMonth, onMeta, cacheClear, beginModule, endModule } from './hub';
 import { installGsShim } from './gsShim';
 import { useAuth } from '../lib/auth';
 import { DATASETS } from '../lib/supabase';
+import { registerDrill } from '../pages/DeptCost';
 
 import initDeptCost from './screens/deptCost';
 import initMatInput from './screens/matInput';
@@ -28,6 +30,8 @@ export const PATH_SCREEN: Record<string, string> = {
   '/settings/alloc': 'alloc-settings', '/settings/items': 'alloc-items', '/settings/materials': 'alloc-mats', '/settings/support': 'support',
 };
 const SCREEN_PATH: Record<string, string> = Object.fromEntries(Object.entries(PATH_SCREEN).map(([p, s]) => [s, p]));
+/** 새 디자인(React)으로 교체된 화면 — 기존 화면은 계산만 하고 보이지 않음 */
+export const REACT_SCREENS = new Set(['bu-margin', 'bu-margin-my', 'bu-margin-real', 'margin-alloc', 'dept-cost', 'purchase-sales', 'mat-input', 'lot-stock', 'dept-support', 'alloc-settings', 'alloc-items', 'alloc-mats', 'support']);
 
 let booted = false;
 function bootOnce(container: HTMLElement) {
@@ -47,6 +51,7 @@ function bootOnce(container: HTMLElement) {
     endModule();
   }
   try { lucideShim.createIcons(); } catch { /* noop */ }
+  registerDrill(); // 기존 모듈이 덮어쓴 전표 드릴 함수를 새 화면 것으로 되돌림
 }
 
 export default function LegacyHost() {
@@ -70,17 +75,17 @@ export default function LegacyHost() {
 
   return (
     <div style={{ display: screen ? 'block' : 'none' }}>
-      <LoadingStrip />
-      <div ref={ref} className="legacy-scope max-w-[1600px] mx-auto" />
+      {!REACT_SCREENS.has(screen || '') && <LoadingStrip />}
+      <div ref={ref} className="legacy-scope max-w-[1600px] mx-auto" style={{ display: REACT_SCREENS.has(screen || '') ? 'none' : 'block' }} />
     </div>
   );
 }
 
 /** 데이터 상태 패널: 데이터셋별 건수·상태, 다시 불러오기 */
 function LoadingStrip() {
-  const [meta, setMeta] = useState<Record<string, { state: string; note: string }>>({});
+  const [meta, setMeta] = useState<Record<string, { state: string; note: string }>>(() => ({ ...(KJHub.meta || {}) }));
   const [open, setOpen] = useState(false);
-  useEffect(() => onMeta(m => setMeta({ ...m })), []);
+  useEffect(() => { setMeta({ ...(KJHub.meta || {}) }); return onMeta(m => setMeta({ ...m })); }, []);
   const keys = Object.keys(DATASETS);
   const loading = keys.filter(k => meta[k]?.state === 'loading');
   const errors = keys.filter(k => meta[k]?.state === 'error');

@@ -1,0 +1,33 @@
+/* 기존 화면(구매/판매·실자재·재고·설정 등)을 새 디자인 토큰에 맞추는 덧칠
+   — 아직 새 화면으로 다시 만들지 않은 화면도 같은 글꼴·색·모서리로 보이게 합니다. */
+.legacy-scope{font-family:var(--font-body);color:var(--fg);font-size:13.5px;padding-inline:0}
+.legacy-scope section.hub-screen{padding:18px 20px 40px!important}
+.legacy-scope h1,.legacy-scope h2,.legacy-scope h3{letter-spacing:-.01em}
+.legacy-scope .text-indigo-700,.legacy-scope .text-indigo-600,.legacy-scope .text-indigo-500,.legacy-scope .hover\:text-indigo-800:hover{color:var(--brand)!important}
+.legacy-scope .bg-indigo-600,.legacy-scope .hover\:bg-indigo-700:hover{background-color:var(--brand)!important}
+.legacy-scope .bg-indigo-600:hover{background-color:var(--brand-2)!important}
+.legacy-scope .bg-indigo-50,.legacy-scope .hover\:bg-indigo-100:hover{background-color:var(--brand-soft)!important}
+.legacy-scope .border-indigo-500,.legacy-scope .focus\:border-indigo-500:focus{border-color:var(--brand)!important}
+.legacy-scope .border-indigo-100,.legacy-scope .border-indigo-200{border-color:#cfe0fb!important}
+.legacy-scope .bg-slate-800,.legacy-scope .hover\:bg-slate-700:hover{background-color:var(--fg)!important}
+.legacy-scope .text-slate-900,.legacy-scope .text-slate-800{color:var(--fg)!important}
+.legacy-scope .text-slate-700,.legacy-scope .text-slate-600{color:var(--fg-2)!important}
+.legacy-scope .text-slate-500,.legacy-scope .text-slate-400{color:var(--fg-3)!important}
+.legacy-scope .border-slate-200,.legacy-scope .border-slate-100,.legacy-scope .border-slate-300{border-color:var(--line)!important}
+.legacy-scope .bg-slate-50,.legacy-scope .bg-slate-100,.legacy-scope .bg-slate-50\/50,.legacy-scope .bg-slate-100\/50{background-color:var(--surface-2)!important}
+.legacy-scope .bg-white{background-color:var(--surface)!important}
+.legacy-scope .rounded-2xl{border-radius:12px!important}
+.legacy-scope .rounded-xl{border-radius:10px!important}
+.legacy-scope .shadow-lg,.legacy-scope .shadow-xl,.legacy-scope .shadow-md,.legacy-scope .shadow-sm,.legacy-scope .kj-prem-card{box-shadow:none!important}
+.legacy-scope .text-emerald-600,.legacy-scope .text-emerald-700,.legacy-scope .text-emerald-800{color:#2c7f2c!important}
+.legacy-scope .text-red-500,.legacy-scope .text-red-600,.legacy-scope .text-red-700{color:var(--neg)!important}
+.legacy-scope .text-amber-600{color:#9a6f00!important}
+.legacy-scope input,.legacy-scope select,.legacy-scope textarea{font-family:var(--font-body);border-radius:8px!important}
+.legacy-scope input:focus,.legacy-scope select:focus{box-shadow:0 0 0 3px var(--brand-soft)}
+.legacy-scope button{font-family:var(--font-body)}
+.legacy-scope table{font-variant-numeric:tabular-nums}
+.legacy-scope .font-mono,.legacy-scope [style*="tabular-nums"]{font-family:var(--font-num)!important}
+.legacy-scope .text-\[10px\]{font-size:11px!important}
+.legacy-scope .text-\[11px\]{font-size:12px!important}
+.legacy-scope .text-xs{font-size:12.5px!important}
+.legacy-scope .text-sm{font-size:13.5px!important}

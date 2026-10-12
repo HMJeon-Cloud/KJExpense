@@ -76,7 +76,8 @@ button,input,select,textarea{font-family:inherit}
 .sp{flex:1}
 .user{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--fg-2);white-space:nowrap}
 .avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--orange),var(--yellow));color:#fff;font:600 12px var(--font-num);display:grid;place-items:center}
-.page{padding:18px 20px 40px;display:grid;gap:14px;max-width:1500px;margin:0 auto;width:100%}
+.page{padding:18px 20px 40px;display:grid;gap:14px;max-width:1500px;margin:0 auto;width:100%;min-width:0}
+.page>*,.two>*,.drawer>*,.kpis>*{min-width:0}
 .page-head{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .page-head h1{font-size:20px;font-weight:700}
 .page-head .meta{color:var(--fg-3);font-size:12.5px}
@@ -95,7 +96,7 @@ button,input,select,textarea{font-family:inherit}
 .drawer .side{position:sticky;top:66px}
 .drop{border:2px dashed var(--line-2);border-radius:var(--r);padding:28px;text-align:center;color:var(--fg-3);cursor:pointer;transition:all .15s}
 .drop:hover,.drop.over{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
-@media (max-width:820px){.two,.drawer{grid-template-columns:1fr}.drawer .side{position:static}.nav{display:none}}
+@media (max-width:820px){.two,.drawer{grid-template-columns:1fr}.drawer .side{position:static}.nav{display:none}.user .who{display:none}.topbar{padding:0 14px;gap:8px}.page{padding:14px 16px 32px}}
 
 /* 로그인 */
 .login{min-height:100%;display:grid;grid-template-columns:1.1fr 1fr}

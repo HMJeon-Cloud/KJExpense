@@ -339,6 +339,8 @@ export default function init() {
     return kept.sort((a, b) => score[b] - score[a]).slice(0, n);
   }
   // 표시할 부서들의 (계정 → {적요:금액}) 를 기준월에서 한 번에 수집
+  // ★ 새 화면(React)에서 같은 키워드 규칙을 쓰도록 공개
+  try { window.KJHub = window.KJHub || {}; window.KJHub.kw = { kwTokens, buildKwIdf, topKeywords }; } catch (e) {}
   function collectAccItems(deptSet, months, screenTitle) {
     const rows = hub().rowsFor ? hub().rowsFor('voucher', screenTitle || '부서별 수익/비용') : hub().data && hub().data.voucher;
     const out = {};
@@ -424,6 +426,7 @@ export default function init() {
       if (cur.length && Math.abs(sum - 100) > 0.01) {
         msg.className = 'text-xs font-semibold text-red-600';
         msg.innerText = '[' + g.label + '] 합계가 100%가 아닙니다 (현재 ' + Math.round(sum * 100) / 100 + '%)';
+        cfgNotify();
         return;
       }
     }
@@ -472,6 +475,7 @@ export default function init() {
       btn.innerText = '저장';
       msg.className = 'text-xs font-semibold text-red-600';
       msg.innerText = err && err.message ? err.message : String(err);
+      cfgNotify();
     }).saveAllocation(token(), payload);
   }
   function isDirty() {
@@ -492,6 +496,7 @@ export default function init() {
   function updateDirtyBadge() {
     const el = $('alDirtyBadge');
     if (el) el.classList.toggle('hidden', !isDirty());
+    cfgNotify();
   }
 
   // ── 관리자 편집 UI: 그룹별 카드 ──────────────────────────────────────────
@@ -998,6 +1003,35 @@ export default function init() {
     const roleVisible = deptEntries.filter(e => isFullView() || matchMyDept(e.dept));
     renderDeptChecks(Array.from(new Set(roleVisible.map(e => e.dept))));
     const visible = roleVisible.filter(e => !selectedDepts || selectedDepts.has(e.dept));
+    // ── ★ 새 화면(React)용 모델 내보내기: 부서별 수익/비용 ──
+    try {
+      const __hc = headcountData();
+      const __hqm = (function () { const rows = deptMasterRows(); const m = Object.create(null); for (const r of rows) { const dn = String(r['DeptName'] || '').trim(); const hq = String(r['BizUnitName'] || '').trim(); if (dn && hq) m[norm(dn)] = hq; } return m; })();
+      const __cur = months[months.length - 1];
+      const __accItems = months.length ? collectAccItems(new Set(roleVisible.map(e => e.dept)), [__cur]) : {};
+      const depts = months.length ? roleVisible.map(ent => {
+        const dept = ent.dept;
+        const allocSeries = allocSeriesFor(ent.parts, months, dept);
+        const supAllocSer = supportSeries(months, dept);
+        const supCostSer = supportCostSeries(months, dept);
+        const voucherSer = months.map(m => (dm[dept] && dm[dept][m]) || 0);
+        const costSeries = months.map((m, i) => voucherSer[i] + (supCostSer[i] || 0));
+        const ins = insights(dept, months);
+        const compo = ent.parts.map(p => { const rs = groupRatiosFor(p.g.key, __cur || alSelMonth).filter(r => r.dept === dept); return { key: p.g.key, label: p.g.label, pct: rs.reduce((a, r) => a + (Number(r.pct) || 0), 0) }; });
+        const items = __accItems[dept] || {};
+        const idf = buildKwIdf(items);
+        const accTotals = Object.entries(items).map(([a, descs]) => [a, Object.values(descs).reduce((s2, v) => s2 + v, 0)]).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]);
+        const slices = accTotals.slice(0, 6).map(e => ({ a: e[0], v: e[1], kws: topKeywords(items[e[0]] || {}, 2, idf) }));
+        const etc = accTotals.slice(6).reduce((s2, e) => s2 + e[1], 0); if (etc > 0) slices.push({ a: '기타', v: etc, kws: [] });
+        const hcM = __hc.byDept[norm(dept)] || {};
+        return { d: dept, hq: __hqm[norm(dept)] || '기타', groups: compo, margin: allocSeries, supAlloc: supAllocSer, supCost: supCostSer, voucher: voucherSer, cost: costSeries,
+          emp: months.map(m => (hcM[m] ? hcM[m].emp : 0)), empNow: (__hc.latest[norm(dept)] || {}).emp || 0, slices, alerts: ins.inc.map(x => ({ a: x.a, v: Math.abs(x.d), up: x.dir === 'up' })) };
+      }) : [];
+      const groupSummary = GROUPS.map(g => { const mm = groupMonthlyMargin(g); const manual = groupManual(g.key); const ser = months.map(m => mm[m] || 0); return { key: g.key, label: g.label, color: GROUP_COLORS[g.key], total: manual != null ? manual : ser.reduce((a, b) => a + b, 0), manual: manual != null, series: ser }; });
+      const model = { id: 'margin-alloc', months, cur: __cur || '', prev: months.length > 1 ? months[months.length - 2] : null, depts, groupSummary, selected: selectedDepts ? Array.from(selectedDepts) : null, noAlloc: !deptEntries.length, isAdmin: isAdmin(), updatedAt: alloc.updatedAt || null, updatedBy: alloc.updatedBy || null };
+      window.KJHub.models = window.KJHub.models || {}; window.KJHub.models['margin-alloc'] = model;
+      window.dispatchEvent(new CustomEvent('kjhub:model', { detail: { id: 'margin-alloc' } }));
+    } catch (e) { console.error('[KJHub] 부서별 모델 내보내기 실패', e); }
     if (!deptEntries.length || !roleVisible.length || !months.length) {
       wrap.innerHTML = '';
       info.classList.remove('hidden');
@@ -1128,6 +1162,33 @@ export default function init() {
   }
 
   // ── 초기화 ────────────────────────────────────────────────────────────
+
+  // ── 새 설정 화면(React) 브리지 — 상태·저장 로직은 이 모듈이 그대로 수행 ──
+  function cfgNotify() { try { window.dispatchEvent(new CustomEvent('kjhub:cfg', { detail: { part: 'groups' } })); } catch (e) {} }
+  window.KJHub = window.KJHub || {}; window.KJHub.cfg = window.KJHub.cfg || {};
+  window.KJHub.cfg.groups = {
+    GROUPS: GROUPS, GROUP_COLORS: GROUP_COLORS,
+    month: () => alSelMonth,
+    setMonth(m) { alSelMonth = m; seedDraft(); try { renderAdminEditor(); renderCards(); } catch (e) {} updateDirtyBadge(); },
+    rows: gk => editRatios(gk).map(r => ({ dept: r.dept, pct: Number(r.pct) || 0 })),
+    deptOptions: gk => deptOptions(GROUPS.find(g => g.key === gk) || {}),
+    setPct(gk, i, v) { const r = editRatios(gk)[i]; if (r) r.pct = Number(v) || 0; try { renderCards(); } catch (e) {} updateDirtyBadge(); },
+    del(gk, i) { editRatios(gk).splice(i, 1); try { renderCards(); } catch (e) {} updateDirtyBadge(); },
+    add(gk, dept) { if (!dept || editRatios(gk).some(r => r.dept === dept)) return; editRatios(gk).push({ dept: dept, pct: 0 }); try { renderCards(); } catch (e) {} updateDirtyBadge(); },
+    equal(gk) { const rs = editRatios(gk); if (!rs.length) return; const per = Math.floor(10000 / rs.length) / 100; rs.forEach((r, i) => { r.pct = i === 0 ? Math.round((100 - per * (rs.length - 1)) * 100) / 100 : per; }); try { renderCards(); } catch (e) {} updateDirtyBadge(); },
+    manual: gk => String((draft[gk] || {}).manualMargin || ''),
+    setManual(gk, v) { draft[gk].manualMargin = v; try { renderCards(); } catch (e) {} updateDirtyBadge(); },
+    isDirty: () => isDirty(),
+    save: () => saveConfig(),
+    applyEvery() { const d = new Date(); const now = mIdxA(String(d.getFullYear()) + ('0' + (d.getMonth() + 1)).slice(-2)); GROUPS.forEach(g => { const cur = editRatios(g.key).map(r => ({ dept: r.dept, pct: Number(r.pct) || 0 })); for (let i = now; i > now - 24; i--) draft[g.key].ratiosByMonth[mStrA(i)] = cur.map(r => ({ dept: r.dept, pct: r.pct })); }); saveConfig(); },
+    revert() { seedDraft(); try { renderAdminEditor(); renderCards(); } catch (e) {} updateDirtyBadge(); },
+    hasOwnMonth: gk => !!(((alloc.groups || {})[gk] || {}).ratiosByMonth || {})[alSelMonth],
+    sourceMonth(gk) { const byM = ((alloc.groups || {})[gk] || {}).ratiosByMonth || {}; if (byM[alSelMonth]) return alSelMonth; const ks = Object.keys(byM).filter(k => mIdxA(k) <= mIdxA(alSelMonth)).map(mIdxA).sort((a, b) => b - a); return ks.length ? mStrA(ks[0]) : null; },
+    monthlyMargin: gk => { const g = GROUPS.find(x => x.key === gk); return g ? groupMonthlyMargin(g) : {}; },
+    manualOf: gk => groupManual(gk),
+    msg() { const el = $('alSaveMsg'); return el ? { text: el.innerText || '', cls: /red/.test(el.className) ? 'neg' : /emerald/.test(el.className) ? 'pos' : '' } : { text: '', cls: '' }; },
+    updatedAt: () => alloc.updatedAt, updatedBy: () => alloc.updatedBy,
+  };
   function init() {
     if (!$('alCards')) return;
     // 기준월 목록 (최근 24개월)
@@ -1171,6 +1232,13 @@ export default function init() {
     $('alMonths').addEventListener('change', renderCards);
     $('alSort').addEventListener('change', renderCards);
     $('alBaseMonth').addEventListener('change', renderCards);
+    window.KJHub.actions = window.KJHub.actions || {};
+    window.KJHub.actions['margin-alloc'] = {
+      setBaseMonth(v) { const el = $('alBaseMonth'); if (el && el.value !== v) { el.value = v; renderCards(); } },
+      setMonths(n) { const el = $('alMonths'); if (el && String(el.value) !== String(n)) { el.value = String(n); renderCards(); } },
+      get() { const a = $('alBaseMonth'), b = $('alMonths'); return { baseMonth: a ? a.value : '', months: Number(b && b.value || 3) }; },
+      render: renderCards,
+    };
     $('alBaseMonth').addEventListener('blur', () => {
       const el = $('alBaseMonth');
       if (el.value && el.value < '2025-01') {
@@ -1389,6 +1457,7 @@ export default function init() {
       if (!months.length || !busAll.length) {
         empty.classList.remove('hidden');
         empty.innerText = '표시할 데이터가 없습니다. [구매 및 판매 내역] 데이터가 로드되면 수익이 계산됩니다.';
+        try { window.KJHub.models = window.KJHub.models || {}; window.KJHub.models['bu-margin' + SUF] = { id: 'bu-margin' + SUF, empty: true, reason: !months.length ? 'months' : 'results' }; window.dispatchEvent(new CustomEvent('kjhub:model', { detail: { id: 'bu-margin' + SUF } })); } catch (e) {}
         return;
       }
       empty.classList.add('hidden');
@@ -1658,6 +1727,54 @@ export default function init() {
       const hcUnitLbl = DEPT_LEVEL ? '부서' : '본부';
       $id('buHcMonth').innerText = mLabel(cur);
       $id('buHeadcount').innerHTML = hcRows.length ? '<table class="w-full text-sm"><thead><tr class="text-slate-400 text-[11px] border-b border-slate-200"><th class="py-1.5 px-3 text-left font-semibold">' + hcUnitLbl + '</th><th class="py-1.5 px-3 text-right font-semibold">인원</th><th class="py-1.5 px-3 text-right font-semibold">비용</th><th class="py-1.5 px-3 text-right font-semibold">인당 비용</th></tr></thead><tbody>' + hcRows.map(x => '<tr class="border-b border-slate-100 cursor-pointer hover:bg-indigo-50/40 bu-hc-row" data-hq="' + x.hq + '" title="더블클릭: 부서별 수익/비용에서 ' + x.hq + ' 조회"><td class="py-2 px-3 font-semibold text-slate-700">' + x.hq + '</td><td class="py-2 px-3 text-right text-slate-700" style="font-variant-numeric:tabular-nums">' + (x.emp || '-') + (x.emp ? '명' : '') + '</td><td class="py-2 px-3 text-right font-semibold text-slate-800" style="font-variant-numeric:tabular-nums">' + fmtWon(x.cost) + '</td><td class="py-2 px-3 text-right text-slate-700" style="font-variant-numeric:tabular-nums">' + (x.per != null ? fmtWon(x.per) : '-') + '</td></tr>').join('') + '</tbody></table>' : '<p class="text-xs text-slate-400">기준월 인원 데이터가 없습니다. (부서별 월별 인원 시트 연동 필요)</p>';
+      // ── ★ 새 화면(React)용 모델 내보내기 — 계산 결과를 그대로 전달 ──
+      try {
+        const zeros = () => months.map(() => 0);
+        const model = {
+          id: 'bu-margin' + SUF, realized: REALIZED, deptLevel: DEPT_LEVEL, months, cur, prev,
+          kpi: { tMargin: dispTMargin, curMargin, prevMargin, tCost, curCost, prevCost, usage, allocTotal },
+          series: { margin: dispMarginSeries, cost: totalCostSeries, supAlloc: REALIZED ? zeros() : supAllocSeriesBU, supCost: REALIZED ? zeros() : supCostSeriesBU },
+          hqCards: hqShowMargin.map(hq => { const s2 = hqAllocSeries[hq] || zeros(); const sum = s2.reduce((x, y) => x + y, 0); return { hq, series: s2, sum, cur: s2[s2.length - 1] || 0, prev: s2.length > 1 ? s2[s2.length - 2] : 0, share: DEPT_LEVEL ? null : pct(sum, allocTotal) }; }),
+          hqGroups: hqShow.map(hq => { const dep = hqDepts[hq] || []; const mSer = hqAllocSeries[hq] || zeros();
+            const supC = months.map(m => REALIZED ? 0 : dep.reduce((s3, d) => s3 + supportRecv(d, m), 0)); const supM = months.map(m => REALIZED ? 0 : dep.reduce((s3, d) => s3 + supportGive(d, m), 0));
+            const cSer = months.map((m, i) => dep.reduce((s3, d) => s3 + ((dm[d] && dm[d][m]) || 0), 0) + (supC[i] || 0));
+            return { hq, margin: mSer, cost: cSer, supAlloc: supM, supCost: supC, deptCount: hqAllocCnt[hq] || 0, depts: dep }; }),
+          donut: divSlices, divDetail: divUnits.map(u => { const accDescs = {}; unitDeptsOf(u).forEach(d => { const per = items1mo[d] || {}; for (const a in per) { const t = accDescs[a] = accDescs[a] || {}; const dd = per[a]; for (const de in dd) t[de] = (t[de] || 0) + dd[de]; } });
+            const idf = buildKwIdf(accDescs); return { unit: u, isDept: DEPT_LEVEL, total: unitCur(u), tops: topAccOf(u).slice(0, 3).map(e => ({ acc: e[0], v: e[1], kws: topKeywords(accDescs[e[0]] || {}, 2, idf) })) }; }),
+          topDepts: tops, alerts: { ups: ups.map(x => Object.assign({ hq: hqm[norm(x.d)] || '기타' }, x)), downs: downs.map(x => Object.assign({ hq: hqm[norm(x.d)] || '기타' }, x)) },
+          headcount: hcRows.map(x => Object.assign({ depts: DEPT_LEVEL ? [x.hq] : (hqDepts[x.hq] || []) }, x)),
+          hqOrder: hqShow,
+          // 수익은 어디서 났나: 이윤 원천(그룹)별 · 사업장(BU)별 · 부서별(배분 후) · 지원 수익
+          revenue: (function () {
+            const byGroup = GROUPS.map(g => { const mm = groupMonthlyMargin(g); const ser = months.map(m => mm[m] || 0); return { key: g.key, label: g.label, series: ser, cur: ser[ser.length - 1] || 0, prev: ser.length > 1 ? ser[ser.length - 2] : 0, sum: ser.reduce((a, b) => a + b, 0) }; }).filter(x => x.series.some(v => v !== 0));
+            const byBUList = busAll.map(b => { const ser = buSeries[b]; return { bu: b, series: ser, cur: ser[ser.length - 1] || 0, prev: ser.length > 1 ? ser[ser.length - 2] : 0, sum: ser.reduce((a, b2) => a + b2, 0) }; }).filter(x => x.series.some(v => v !== 0));
+            const byDeptList = [];
+            amap.forEach((ent, dname) => { if (!deptAllowed(dname)) return; const ser = allocSeriesFor(ent.parts, months, dname); const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser; if (!use.some(v => v > 0)) return; byDeptList.push({ d: dname, hq: hqm[norm(dname)] || '기타', cur: use[use.length - 1] || 0, prev: use.length > 1 ? use[use.length - 2] : 0, sum: use.reduce((a, b) => a + b, 0), groups: ent.parts.map(p => p.g.label), support: REALIZED ? 0 : supportGive(dname, cur) }); });
+            byDeptList.sort((a, b) => b.cur - a.cur);
+            return { byGroup, byBU: byBUList, byDept: byDeptList, supportCur: REALIZED ? 0 : (supAllocSeriesBU[months.length - 1] || 0) };
+          })(),
+          // 부서 단위 행 (본부 펼침용): 수익·비용·인원
+          deptRows: (function () {
+            const rows = [];
+            const seen = new Set();
+            const push = (d) => {
+              if (seen.has(d)) return; seen.add(d);
+              const ent = amap.get(d);
+              const ser = ent ? allocSeriesFor(ent.parts, months, d) : zeros();
+              const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[d] || {})[m] || 0) : ser;
+              const costSer = months.map(m => ((dm[d] && dm[d][m]) || 0) + (REALIZED ? 0 : supportRecv(d, m)));
+              const rec = (hc.byDept[norm(d)] || {})[cur];
+              rows.push({ d, hq: hqm[norm(d)] || '기타', margin: use, cost: costSer, emp: rec ? rec.emp : 0 });
+            };
+            deptList.forEach(push);
+            amap.forEach((ent, d) => { if (deptAllowed(d)) push(d); });
+            return rows;
+          })(),
+        };
+        window.KJHub.models = window.KJHub.models || {};
+        window.KJHub.models[model.id] = model;
+        window.dispatchEvent(new CustomEvent('kjhub:model', { detail: { id: model.id } }));
+      } catch (e) { console.error('[KJHub] 모델 내보내기 실패', e); }
       $id('buHeadcount').querySelectorAll('.bu-hc-row').forEach(tr => {
         tr.addEventListener('dblclick', () => {
           const key = tr.dataset.hq;
@@ -1686,6 +1803,14 @@ export default function init() {
       });
       window.addEventListener('kjhub:data', renderBU);
       window.addEventListener('kjhub:results', renderBU);
+      // ★ 새 화면(React)에서 조회 조건을 바꿀 때 사용
+      window.KJHub.actions = window.KJHub.actions || {};
+      window.KJHub.actions['bu-margin' + SUF] = {
+        setBaseMonth(v) { const el = $id('buBaseMonth'); if (el && el.value !== v) { el.value = v; renderBU(); } },
+        setMonths(n) { const el = $id('buMonths'); if (el && String(el.value) !== String(n)) { el.value = String(n); renderBU(); } },
+        get() { const a = $id('buBaseMonth'), b = $id('buMonths'); return { baseMonth: a ? a.value : '', months: Number(b && b.value || 6) }; },
+        render: renderBU,
+      };
       // 기준월 기본값 = 마감월 (국전 수익/비용 · 사업단위 수익/비용)
       (function () {
         const el = $id('buBaseMonth');
@@ -2271,6 +2396,7 @@ export default function init() {
     function syncDirty() {
       const d = itemsDirty();
       if ($a('aiDirtyBadge')) $a('aiDirtyBadge').classList.toggle('hidden', !d);
+      itemsNotify();
     }
 
     // ── 저장 (groups 보존 + items 저장) ──
@@ -2348,6 +2474,7 @@ export default function init() {
         btn.disabled = false; btn.innerText = '저장';
         msg.className = 'text-xs font-semibold text-red-600';
         msg.innerText = '저장 실패: ' + (err && err.message ? err.message : err);
+        itemsNotify();
       }).saveAllocation(token(), payload);
     }
 
@@ -2459,6 +2586,7 @@ export default function init() {
         for (let i = ks[0]; i <= mIdx(curMonth()); i++) out.push(mStr(i));
         return out;
       };
+      window.__kjItemsApply = applyBulk;
       // 기준월 적용: 선택 기준월만 / 전체 일괄 적용: 전체 품목 × 전체 월 / 조회 내역 적용: 조회 결과 × 기준월
       if ($a('aiApplyAllBtn')) $a('aiApplyAllBtn').addEventListener('click', () => applyBulk(base.list, [aiSelMonth], mLbl(aiSelMonth) + ' 기준월 적용', 'month'));
       if ($a('aiApplyEveryBtn')) $a('aiApplyEveryBtn').addEventListener('click', () => {
@@ -2478,6 +2606,31 @@ export default function init() {
       publish(alloc.items);
       renderItems();
     }
+
+    // ── 새 설정 화면(React) 브리지 ──
+    function itemsNotify() { try { window.dispatchEvent(new CustomEvent('kjhub:cfg', { detail: { part: 'items' } })); } catch (e) {} }
+    window.KJHub = window.KJHub || {}; window.KJHub.cfg = window.KJHub.cfg || {};
+    window.KJHub.cfg.items = {
+      month: () => aiSelMonth,
+      setMonth(m) { aiSelMonth = m; renderItems(); },
+      monthOptions() { try { ensureBase(); } catch (e) {} const cmM = (window.KJHub && window.KJHub.closeMonth) ? window.KJHub.closeMonth() : curMonth(); let minI = Math.min(mIdx(curMonth()), mIdx(cmM)); (base.list || []).forEach(e => { for (const m in e.months) { const i = mIdx(m); if (i < minI) minI = i; } }); const maxI = Math.max(mIdx(curMonth()), mIdx(cmM)); const opts = []; for (let i = maxI; i >= minI; i--) opts.push(mStr(i)); return opts; },
+      list() { try { ensureBase(); } catch (e) { return []; } return (base.list || []).map(e => ({ code: e.code, name: e.name || '', asset: e.asset || '', src: e.src || '', unit: e.unitName || '', first: (() => { if (!e.months) return null; const ks = Object.keys(e.months).filter(k => e.months[k].q > 0).map(mIdx).sort((a, b) => a - b); return ks.length ? mStr(ks[0]) : null; })(), isSynth: !!(base.synthItems && base.synthItems[e.code]) })); },
+      refPrice: (code, ym) => (base.avgPrice3Info ? base.avgPrice3Info(code, ym || aiSelMonth) : { v: 0, src: null }),
+      value(code, kind, ym) { seedGuard(); const r = iDraft.byItem[code]; if (!r) return null; const st = (kind === 'syn' ? r.sellSynByMonth : r.sellBuyByMonth) || {}; const m = ym || aiSelMonth; return st[m] != null ? Number(st[m]) : null; },
+      latestBefore(code, kind, ym) { seedGuard(); const r = iDraft.byItem[code]; if (!r) return null; const st = (kind === 'syn' ? r.sellSynByMonth : r.sellBuyByMonth) || {}; const yi = mIdx(ym || aiSelMonth); const ks = Object.keys(st).filter(m => mIdx(m) < yi && st[m] != null).map(mIdx).sort((a, b) => b - a); return ks.length ? { m: mStr(ks[0]), v: Number(st[mStr(ks[0])]) } : null; },
+      setValue(code, kind, v) { seedGuard(); userEdited = true; const rec = ensureRec(code); const st = kind === 'syn' ? rec.sellSynByMonth : rec.sellBuyByMonth; if (v == null || v === '') delete st[aiSelMonth]; else st[aiSelMonth] = Number(v); pruneRec(code); syncDirty(); },
+      defaultPct: () => ({ buy: Number(iDraft.defaultPct) || 0, syn: Number(iDraft.defaultPctSyn) || 0 }),
+      setDefaultPct(kind, v) { seedGuard(); userEdited = true; if (kind === 'syn') iDraft.defaultPctSyn = Number(v) || 0; else iDraft.defaultPct = Number(v) || 0; syncDirty(); },
+      dirty: () => { seedGuard(); return itemsDirty(); },
+      save: () => saveItems('month'),
+      revert() { seeded = false; userEdited = false; renderItems(); },
+      applyMonthAll() { if (window.__kjItemsApply) window.__kjItemsApply(base.list, [aiSelMonth], mLbl(aiSelMonth) + ' 기준월 적용', 'month'); },
+      applyEvery() { if (window.__kjItemsApply) window.__kjItemsApply(base.list, 'all', '전체 일괄 적용', 'all'); },
+      applyView(codes) { const set = Object.create(null); (codes || []).forEach(c => { set[c] = true; }); if (window.__kjItemsApply) window.__kjItemsApply((base.list || []).filter(e => set[e.code]), [aiSelMonth], '조회 내역 적용(' + mLbl(aiSelMonth) + ')', 'month'); },
+      prevMonth() { const b = $a('aiPrevMonthBtn'); if (b) b.click(); },
+      msg() { const el = $a('aiSaveMsg'); return el ? { text: el.innerText || '', cls: /red/.test(el.className) ? 'neg' : /emerald/.test(el.className) ? 'pos' : '' } : { text: '', cls: '' }; },
+      saving: () => { const b = $a('aiSaveBtn'); return !!(b && b.disabled); },
+    };
     if (document.readyState === 'loading') __onReady(initItems);else initItems();
   })();
 })();

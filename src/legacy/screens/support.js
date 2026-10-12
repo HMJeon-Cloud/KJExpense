@@ -510,10 +510,11 @@ export default function init() {
       if (btn) { btn.disabled = false; btn.innerText = '저장'; }
       if (msg) { msg.className = 'text-xs font-semibold text-emerald-600'; msg.innerText = '저장 완료 (' + new Date().toLocaleString('ko-KR') + ')'; }
       const b = $s('spDirtyBadge'); if (b) b.classList.add('hidden');
-      seed(); render(); announce();
+      seed(); render(); announce(); spNotify();
     }).withFailureHandler(err => {
       if (btn) { btn.disabled = false; btn.innerText = '저장'; }
       if (msg) { msg.className = 'text-xs font-semibold text-red-600'; msg.innerText = (err && err.message) ? err.message : String(err); }
+      spNotify();
     }).saveAllocation(tk, payload);
   }
   function load() {
@@ -522,9 +523,30 @@ export default function init() {
     if (!isAS || !tk) { seed(); render(); return; }
     google.script.run.withSuccessHandler(c => {
       if (c && c.support) cfg = c.support;
-      seed(); render(); announce();
-    }).withFailureHandler(() => { seed(); render(); }).getAllocation(tk);
+      seed(); render(); announce(); spNotify();
+    }).withFailureHandler(() => { seed(); render(); spNotify(); }).getAllocation(tk);
   }
+
+  // ── 새 설정 화면(React) 브리지 — draft 배열을 직접 편집하고 markDirty()로 알립니다 ──
+  function spNotify() { try { window.dispatchEvent(new CustomEvent('kjhub:cfg', { detail: { part: 'support' } })); } catch (e) {} }
+  window.KJHub = window.KJHub || {}; window.KJHub.cfg = window.KJHub.cfg || {};
+  window.KJHub.cfg.support = {
+    month: () => selMonth,
+    setMonth(m) { selMonth = m; seed(); render(); spNotify(); },
+    monthOptions() { const now = mIdx(curMonth()); const out = []; for (let i = now; i > now - 24; i--) out.push(mStr(i)); if (!out.includes(selMonth)) out.unshift(selMonth); return out; },
+    draft: () => draft,
+    dirty: () => dirty,
+    touch() { markDirty(); spNotify(); },
+    sourceMonth: ym => sourceMonth(ym || selMonth),
+    savedMonths: () => Object.keys(cfg.byMonth || {}).sort(),
+    deptList: deptList, buList: buList, deptsOfBU: deptsOfBU, headcountOf: headcountOf,
+    taskDepts: taskDepts, taskShares: taskShares,
+    canEditDept: canEditDept, isAdmin: () => allowedDepts() === null,
+    save: () => save('month'), applyEvery: () => save('all'),
+    revert() { seed(); render(); const b = $s('spDirtyBadge'); if (b) b.classList.add('hidden'); spNotify(); },
+    msg() { const el = $s('spSaveMsg'); return el ? { text: el.innerText || '', cls: /red/.test(el.className) ? 'neg' : /emerald/.test(el.className) ? 'pos' : '' } : { text: '', cls: '' }; },
+    saving: () => { const b = $s('spSaveBtn'); return !!(b && b.disabled); },
+  };
 
   __onReady(() => {
     const sel = $s('spMonth');

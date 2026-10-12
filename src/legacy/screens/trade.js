@@ -1571,6 +1571,19 @@ export default function init() {
         window.dispatchEvent(new CustomEvent('kjhub:results'));
       }
     }, [summary]);
+    // ★ 새 화면(React)용 브리지 — 상태·동작을 공개하고, 변경 때마다 알림
+    React.useEffect(() => {
+      try {
+        window.KJHub = window.KJHub || {};
+        window.KJHub.trade = {
+          TreeNode, treeData, summary, allRows, filteredRows, filterOptions, draftFilters, appliedFilters, isProcessing, errorMsg, lastLoadedAt, collapseSignal, isFilterActive,
+          setDraft: patch => setDraftFilters(f => Object.assign({}, f, patch)),
+          search: handleSearch, reset: handleResetFilters,
+          collapse: () => setCollapseSignal(s => s + 1),
+        };
+        window.dispatchEvent(new CustomEvent('kjhub:trade'));
+      } catch (e) {}
+    });
     return /*#__PURE__*/React.createElement("div", {
       className: "max-w-[1600px] mx-auto space-y-6 pb-20"
     }, errorMsg && /*#__PURE__*/React.createElement("div", {
@@ -1816,7 +1829,9 @@ export default function init() {
   const TreeNode = React.memo(function TreeNode({
     node,
     depth,
-    collapseSignal
+    collapseSignal,
+    extra,        // (새 화면) 행 끝에 덧붙일 칸 렌더 함수
+    extraCount    // (새 화면) 덧붙인 칸 수 — 상세 행 colSpan 보정
   }) {
     const [isOpen, setIsOpen] = useState(false);
     useEffect(() => {
@@ -2024,7 +2039,7 @@ export default function init() {
       className: "p-3 text-right text-slate-600"
     }, formatNumber(node.cogs)), /*#__PURE__*/React.createElement("td", {
       className: "p-3 pr-6 text-right font-bold " + getMarginColor(node.margin)
-    }, formatNumber(node.margin))), isOpen && (hasChildren ? Object.entries(node.children).sort((a, b) => (
+    }, formatNumber(node.margin)), extra ? extra(node) : null), isOpen && (hasChildren ? Object.entries(node.children).sort((a, b) => (
       // 품목 노드는 품목명(라벨) 기준 정렬 — 그 외 계층은 기존 순서 유지
       (a[1] && a[1].type === 'item' && b[1] && b[1].type === 'item')
         ? String(a[0]).localeCompare(String(b[0]), 'ko') : 0
@@ -2032,11 +2047,13 @@ export default function init() {
       key: key,
       node: child,
       depth: depth + 1,
-      collapseSignal: collapseSignal
+      collapseSignal: collapseSignal,
+      extra: extra,
+      extraCount: extraCount
     })) : isLeaf ? /*#__PURE__*/React.createElement("tr", {
       className: "bg-slate-50/80 border-b border-slate-200"
     }, /*#__PURE__*/React.createElement("td", {
-      colSpan: 4,
+      colSpan: 4 + (extraCount || 0),
       className: "p-3 px-4 md:pl-16"
     }, /*#__PURE__*/React.createElement("div", {
       className: "space-y-4 fade-in w-full"

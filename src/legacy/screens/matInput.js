@@ -140,6 +140,8 @@ export default function init() {
   window.KJHub = window.KJHub || {};
   window.KJHub.openMatInput = c => {
     ctx = (c && c.itemNo) ? { itemNo: String(c.itemNo).trim(), itemName: c.itemName || '', lotNo: c.lotNo ? String(c.lotNo).trim() : '', ym: c.ym || '' } : null;
+    window.KJHub.matInputCtx = ctx; // 새 화면(React)이 같은 문맥을 읽습니다
+    window.dispatchEvent(new CustomEvent('kjhub:matinput'));
     if (window.KJHub.showScreen) window.KJHub.showScreen('mat-input');
     render();
     if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
