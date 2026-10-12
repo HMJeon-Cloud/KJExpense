@@ -1,6 +1,6 @@
 // ===== 국전 비용 현황 · 공용 셸 (Supabase 판) =====
 // 기존 Apps Script 셸(block 4)의 KJHub API 를 그대로 제공하되, 데이터는 Supabase rows 테이블에서 읽습니다.
-import { supabase, DATASETS } from '../lib/supabase';
+import { supabase, DATASETS, SUPABASE_URL, SUPABASE_ANON } from '../lib/supabase';
 
 export const KJHub = {
     data: {},
@@ -225,6 +225,16 @@ async function fetchVersions() {
   const m = {}; (data || []).forEach(r => { m[r.dataset] = { ver: r.ver, cnt: Number(r.cnt) }; });
   return m;
 }
+// 데이터셋을 JSON "문자열" 그대로 받아 캐시에 저장 (객체를 IndexedDB 에 넣으면 복제 비용이 커서 화면이 멈춤)
+async function fetchDatasetText(key) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/dataset_rows', {
+    method: 'POST', headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + (session ? session.access_token : SUPABASE_ANON), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_dataset: key }),
+  });
+  if (!res.ok) throw new Error('dataset_rows HTTP ' + res.status + ' (0003 SQL 실행 여부 확인)');
+  return await res.text();
+}
 async function fetchDatasetPaged(key) {
   const PAGE = 1000; let from = 0; const out = [];
   for (;;) {
@@ -236,31 +246,41 @@ async function fetchDatasetPaged(key) {
   }
   return out;
 }
-async function fetchDataset(key) {
-  const { data, error } = await supabase.rpc('dataset_rows', { p_dataset: key });
-  if (error) { console.warn('dataset_rows 실패 → 페이지 방식으로 대체:', error.message); return fetchDatasetPaged(key); }
-  return Array.isArray(data) ? data : [];
-}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function loadKeys(keys, force) {
   const need = (keys || []).filter(k => DATASETS[k] && (force || !KJHub.data[k]) && !LOADING[k]);
   if (!need.length) return;
   if (!versions || force) versions = await fetchVersions();
-  await Promise.all(need.map(async k => {
-    LOADING[k] = true; setMeta(k, 'loading');
+  need.forEach(k => { LOADING[k] = true; setMeta(k, 'loading'); });
+  // 1) 네트워크는 병렬, 2) JSON 파싱은 순차(화면 멈춤 최소화), 3) 화면 갱신(publish)은 마지막에 한 번
+  const texts = await Promise.all(need.map(async k => {
     try {
       const v = versions[k];
-      if (v && v.cnt === 0) { KJHub.data[k] = []; setMeta(k, 'ready', '0건'); KJHub.publish(); return; }
-      let rows = null, src = '';
+      if (v && v.cnt === 0) return { k, text: '[]', src: '없음' };
       const cached = force ? null : await cacheGet(k);
-      if (cached && v && cached.ver === v.ver && Array.isArray(cached.rows)) { rows = cached.rows; src = '캐시'; }
-      else { rows = await fetchDataset(k); src = '서버'; if (v) await cachePut(k, { ver: v.ver, rows }); }
-      KJHub.data[k] = rows;
-      setMeta(k, 'ready', rows.length.toLocaleString('ko-KR') + '건 · ' + src);
-      console.log('[KJHub] ' + k + ' ' + rows.length + '건 (' + src + ')', rows[0] ? Object.keys(rows[0]).slice(0, 12) : '열 없음');
-      KJHub.publish();
-    } catch (e) { console.error('[KJHub] ' + k + ' 로딩 실패', e); setMeta(k, 'error', e.message || String(e)); }
-    finally { LOADING[k] = false; }
+      if (cached && v && cached.ver === v.ver && typeof cached.text === 'string') return { k, text: cached.text, src: '캐시' };
+      try {
+        const text = await fetchDatasetText(k);
+        if (v) cachePut(k, { ver: v.ver, text }); // 문자열 저장 — 복제 비용 거의 없음
+        return { k, text, src: '서버' };
+      } catch (e) {
+        console.warn('[KJHub] ' + k + ' 단일 요청 실패 → 페이지 방식:', e.message);
+        return { k, rows: await fetchDatasetPaged(k), src: '서버(페이지)' };
+      }
+    } catch (e) { return { k, err: e }; }
   }));
+  for (const t of texts) {
+    try {
+      if (t.err) throw t.err;
+      const rows = t.rows || JSON.parse(t.text);
+      KJHub.data[t.k] = Array.isArray(rows) ? rows : [];
+      setMeta(t.k, 'ready', KJHub.data[t.k].length.toLocaleString('ko-KR') + '건 · ' + t.src);
+      console.log('[KJHub] ' + t.k + ' ' + KJHub.data[t.k].length + '건 (' + t.src + ')');
+    } catch (e) { console.error('[KJHub] ' + t.k + ' 로딩 실패', e); setMeta(t.k, 'error', e.message || String(e)); }
+    finally { LOADING[t.k] = false; }
+    await sleep(0); // 파싱 사이에 화면이 숨 쉴 틈
+  }
+  KJHub.publish();
 }
 export const loadAll = force => loadKeys(Object.keys(DATASETS), force);
 

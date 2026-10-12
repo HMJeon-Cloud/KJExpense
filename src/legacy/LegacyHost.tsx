@@ -63,7 +63,6 @@ export default function LegacyHost() {
 
   useEffect(() => {
     if (screen) KJHub.showScreen(screen, { fromRouter: true });
-    try { (window as unknown as { lucide?: { createIcons: () => void } }).lucide?.createIcons(); } catch { /* noop */ }
   }, [screen]);
 
   return (
