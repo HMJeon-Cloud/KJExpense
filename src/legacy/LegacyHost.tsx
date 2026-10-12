@@ -7,7 +7,7 @@ import * as lucide from 'lucide';
 import { useLocation, useNavigate } from 'react-router-dom';
 import sectionsHtml from './sections.html?raw';
 import './legacy.css';
-import { KJHub, setNavHook, setUser, loadAll, loadCloseMonth, onMeta, cacheClear } from './hub';
+import { KJHub, setNavHook, setUser, loadAll, loadForScreen, loadCloseMonth, onMeta, cacheClear } from './hub';
 import { installGsShim } from './gsShim';
 import { useAuth } from '../lib/auth';
 import { DATASETS } from '../lib/supabase';
@@ -59,11 +59,11 @@ export default function LegacyHost() {
     setNavHook(id => { const p = SCREEN_PATH[id]; if (p && p !== location.hash.slice(1)) nav(p); });
   }, [nav]);
 
-  useEffect(() => { if (employee) { setUser(employee); loadCloseMonth(); loadAll(); } }, [employee?.login_id]); // eslint-disable-line
+  useEffect(() => { if (employee) { setUser(employee); loadCloseMonth(); } }, [employee?.login_id]); // eslint-disable-line
 
   useEffect(() => {
-    if (screen) KJHub.showScreen(screen, { fromRouter: true });
-  }, [screen]);
+    if (screen) { KJHub.showScreen(screen, { fromRouter: true }); if (employee) loadForScreen(screen); }
+  }, [screen, employee?.login_id]); // eslint-disable-line
 
   return (
     <div style={{ display: screen ? 'block' : 'none' }}>

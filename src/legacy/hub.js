@@ -8,11 +8,9 @@ export const KJHub = {
     meta: {},
     // { 키: { state: idle|loading|ready|error, note } }
     publish() {
-      window.dispatchEvent(new CustomEvent('kjhub:data', {
-        detail: {
-          data: this.data
-        }
-      }));
+      const t0 = performance.now();
+      window.dispatchEvent(new CustomEvent('kjhub:data', { detail: { data: this.data } }));
+      console.log('[KJHub] 화면 계산(publish) ' + Math.round(performance.now() - t0) + 'ms');
     },
     // ── 화면별 권한: 이 화면에서 볼 수 있는 부서 목록 ──────────────────
     //   반환 null = 제한 없음(전체) / [] = 이 화면 권한 없음 / [부서..] = 그 부서만
@@ -253,6 +251,7 @@ export async function loadKeys(keys, force) {
   if (!versions || force) versions = await fetchVersions();
   need.forEach(k => { LOADING[k] = true; setMeta(k, 'loading'); });
   // 1) 네트워크는 병렬, 2) JSON 파싱은 순차(화면 멈춤 최소화), 3) 화면 갱신(publish)은 마지막에 한 번
+  const tFetch = performance.now();
   const texts = await Promise.all(need.map(async k => {
     try {
       const v = versions[k];
@@ -269,10 +268,13 @@ export async function loadKeys(keys, force) {
       }
     } catch (e) { return { k, err: e }; }
   }));
+  console.log('[KJHub] 수신 ' + need.join(',') + ' ' + Math.round(performance.now() - tFetch) + 'ms');
   for (const t of texts) {
     try {
       if (t.err) throw t.err;
+      const tp = performance.now();
       const rows = t.rows || JSON.parse(t.text);
+      console.log('[KJHub] 파싱 ' + t.k + ' ' + Math.round(performance.now() - tp) + 'ms, ' + Math.round((t.text || '').length / 1024) + 'KB');
       KJHub.data[t.k] = Array.isArray(rows) ? rows : [];
       setMeta(t.k, 'ready', KJHub.data[t.k].length.toLocaleString('ko-KR') + '건 · ' + t.src);
       console.log('[KJHub] ' + t.k + ' ' + KJHub.data[t.k].length + '건 (' + t.src + ')');
@@ -283,6 +285,38 @@ export async function loadKeys(keys, force) {
   KJHub.publish();
 }
 export const loadAll = force => loadKeys(Object.keys(DATASETS), force);
+
+// 화면별 필요 데이터 (기존 셸의 SCREENS.datasets 와 동일)
+export const SCREEN_DATASETS = {
+  'bu-margin': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount'],
+  'bu-margin-real': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount', 'synth', 'mfgcost', 'matinput'],
+  'bu-margin-my': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount'],
+  'margin-alloc': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount'],
+  'purchase-sales': ['purchase', 'expense', 'sale', 'synth', 'mfgcost', 'matinput'],
+  'mat-input': ['matinput', 'synth', 'purchase'],
+  'dept-cost': ['voucher'],
+  'dept-support': ['dept', 'headcount'],
+  'lot-stock': ['stock'],
+  'alloc-settings': ['purchase', 'expense', 'sale', 'voucher', 'dept'],
+  'alloc-items': ['purchase', 'sale', 'mfgcost', 'synth'],
+  'alloc-mats': ['purchase', 'matinput'],
+  'support': ['dept', 'headcount'],
+};
+// 보고 있는 화면 것부터 받고, 나머지는 한가할 때 하나씩
+let bgTimer = null;
+export async function loadForScreen(screenId) {
+  const first = SCREEN_DATASETS[screenId] || [];
+  await loadKeys(first);
+  clearTimeout(bgTimer);
+  const rest = Object.keys(DATASETS).filter(k => !KJHub.data[k]);
+  const step = async () => {
+    const k = Object.keys(DATASETS).find(x => !KJHub.data[x] && !LOADING[x]);
+    if (!k) return;
+    await loadKeys([k]);
+    bgTimer = setTimeout(step, 1500);
+  };
+  if (rest.length) bgTimer = setTimeout(step, 1500);
+}
 
 // 설정(마감월) 초기 로드
 export async function loadCloseMonth() {
