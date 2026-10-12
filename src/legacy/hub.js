@@ -323,7 +323,10 @@ export async function loadKeys(keys, force) {
   need.forEach(k => { LOADING[k] = true; setMeta(k, 'loading'); });
   // 1) 네트워크는 병렬, 2) JSON 파싱은 순차(화면 멈춤 최소화), 3) 화면 갱신(publish)은 마지막에 한 번
   const tFetch = performance.now();
-  const texts = await Promise.all(need.map(async k => {
+  // 동시 요청은 2개까지 (무료 플랜 DB 에서 한꺼번에 보내면 시간 제한에 걸림)
+  const queue = need.slice(); const texts = [];
+  const worker = async () => { while (queue.length) texts.push(await fetchOne(queue.shift())); };
+  const fetchOne = async k => {
     try {
       const v = versions[k];
       if (v && v.cnt === 0) return { k, text: '[]', src: '없음' };
@@ -335,10 +338,12 @@ export async function loadKeys(keys, force) {
         return { k, text, src: '서버' };
       } catch (e) {
         console.warn('[KJHub] ' + k + ' 단일 요청 실패 → 페이지 방식:', e.message);
-        return { k, rows: await fetchDatasetPaged(k), src: '서버(페이지)' };
+        try { return { k, rows: await fetchDatasetPaged(k), src: '서버(페이지)' }; }
+        catch (e2) { await sleep(1500); return { k, rows: await fetchDatasetPaged(k), src: '서버(페이지·재시도)' }; }
       }
     } catch (e) { return { k, err: e }; }
-  }));
+  };
+  await Promise.all([worker(), worker()]);
   console.log('[KJHub] 수신 ' + need.join(',') + ' ' + Math.round(performance.now() - tFetch) + 'ms');
   for (const t of texts) {
     try {
