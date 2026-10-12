@@ -21,6 +21,9 @@ export function toYm(v: unknown): string {
   const m = s.match(/^(\d{4})-?(\d{2})/); return m ? m[1] + m[2] : '';
 }
 
+/** Date → 'YYYY-MM-DD' (현지 시간 기준; toISOString 은 UTC 라 하루가 밀림) */
+const localDate = (d: Date) => d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+
 export default function Upload() {
   const { employee } = useAuth();
   const { toast, confirm } = useUI();
@@ -54,7 +57,7 @@ export default function Upload() {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json<Row>(ws, { defval: '', raw: true });
     // 헤더 공백 제거, 빈 행 제거
-    const clean = json.map(r => { const o: Row = {}; for (const k in r) { const kk = String(k).trim(); if (kk && !kk.startsWith('__EMPTY')) o[kk] = r[k] instanceof Date ? (r[k] as Date).toISOString().slice(0, 10) : r[k]; } return o; })
+    const clean = json.map(r => { const o: Row = {}; for (const k in r) { const kk = String(k).trim(); if (kk && !kk.startsWith('__EMPTY')) o[kk] = r[k] instanceof Date ? localDate(r[k] as Date) : r[k]; } return o; })
       .filter(r => Object.values(r).some(v => v !== '' && v != null));
     setRows(clean); setCols(clean.length ? Object.keys(clean[0]) : []);
   }

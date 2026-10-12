@@ -1,13 +1,13 @@
 // 기존(Apps Script 판) 화면들을 새 앱 안에서 그대로 띄우는 호스트.
 // 3-A 단계: 데이터·설정·로그인은 Supabase, 화면 코드는 기존 그대로. 3-B 에서 화면별로 새 디자인으로 교체합니다.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as lucide from 'lucide';
 import { useLocation, useNavigate } from 'react-router-dom';
 import sectionsHtml from './sections.html?raw';
 import './legacy.css';
-import { KJHub, setNavHook, setUser, loadAll, loadCloseMonth, onMeta } from './hub';
+import { KJHub, setNavHook, setUser, loadAll, loadCloseMonth, onMeta, cacheClear } from './hub';
 import { installGsShim } from './gsShim';
 import { useAuth } from '../lib/auth';
 import { DATASETS } from '../lib/supabase';
@@ -74,16 +74,30 @@ export default function LegacyHost() {
   );
 }
 
-/** 데이터 로딩 상태 한 줄 */
+/** 데이터 상태 패널: 데이터셋별 건수·상태, 다시 불러오기 */
 function LoadingStrip() {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => onMeta(meta => {
-    const el = ref.current; if (!el) return;
-    const loading = Object.keys(meta).filter(k => meta[k].state === 'loading').map(k => DATASETS[k]?.label ?? k);
-    const errors = Object.keys(meta).filter(k => meta[k].state === 'error').map(k => `${DATASETS[k]?.label ?? k}: ${meta[k].note}`);
-    el.textContent = errors.length ? '데이터 오류 · ' + errors.join(' / ') : loading.length ? '데이터 불러오는 중… ' + loading.join(', ') : '';
-    el.style.display = el.textContent ? 'block' : 'none';
-    el.style.color = errors.length ? 'var(--neg)' : 'var(--fg-3)';
-  }), []);
-  return <div ref={ref} style={{ display: 'none', fontSize: 12, padding: '6px 20px', background: 'var(--surface)', borderBottom: '1px solid var(--line)' }} />;
+  const [meta, setMeta] = useState<Record<string, { state: string; note: string }>>({});
+  const [open, setOpen] = useState(false);
+  useEffect(() => onMeta(m => setMeta({ ...m })), []);
+  const keys = Object.keys(DATASETS);
+  const loading = keys.filter(k => meta[k]?.state === 'loading');
+  const errors = keys.filter(k => meta[k]?.state === 'error');
+  const ready = keys.filter(k => meta[k]?.state === 'ready');
+  const summary = errors.length ? `데이터 오류 ${errors.length}건` : loading.length ? `불러오는 중… ${loading.map(k => DATASETS[k].label).join(', ')}` : `데이터 ${ready.length}/${keys.length}종 준비됨`;
+  return (
+    <div style={{ fontSize: 12, padding: '4px 20px', background: 'var(--surface)', borderBottom: '1px solid var(--line)' }}>
+      <div className="row" style={{ gap: 10 }}>
+        {loading.length > 0 && <span className="spinner" />}
+        <span style={{ color: errors.length ? 'var(--neg)' : 'var(--fg-3)' }}>{summary}</span>
+        <button className="btn sm ghost" onClick={() => setOpen(o => !o)}>{open ? '접기' : '상세'}</button>
+        <button className="btn sm ghost" onClick={async () => { await cacheClear(); await loadAll(true); }} title="브라우저 캐시를 지우고 서버에서 다시 받습니다">다시 불러오기</button>
+      </div>
+      {open && (
+        <div className="row" style={{ gap: 6, paddingBlock: 6 }}>
+          {keys.map(k => { const m = meta[k] || { state: 'idle', note: '' }; const cls = m.state === 'ready' ? 'g' : m.state === 'error' ? 'n' : m.state === 'loading' ? 'y' : 'gr';
+            return <span key={k} className={'tag ' + cls} title={m.note}>{DATASETS[k].label} · {m.state === 'ready' ? m.note : m.state === 'error' ? '오류: ' + m.note : m.state === 'loading' ? '로딩' : '대기'}</span>; })}
+        </div>
+      )}
+    </div>
+  );
 }

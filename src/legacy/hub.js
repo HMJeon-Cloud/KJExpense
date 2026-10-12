@@ -203,7 +203,29 @@ const listeners = new Set();
 export function onMeta(fn) { listeners.add(fn); return () => { listeners.delete(fn); }; }
 function setMeta(key, state, note) { KJHub.meta[key] = { state, note: note || '' }; listeners.forEach(f => f(KJHub.meta)); }
 
-async function fetchDataset(key) {
+// ── 브라우저 캐시(IndexedDB): 업로드 버전이 같으면 다시 내려받지 않음 (무료 플랜 전송량 절약) ──
+const DB_NAME = 'kjhub-cache', STORE = 'datasets';
+function idb() {
+  return new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore(STORE); };
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  });
+}
+async function cacheGet(key) { try { const db = await idb(); return await new Promise((res, rej) => { const t = db.transaction(STORE, 'readonly').objectStore(STORE).get(key); t.onsuccess = () => res(t.result || null); t.onerror = () => rej(t.error); }); } catch (e) { return null; } }
+async function cachePut(key, val) { try { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction(STORE, 'readwrite').objectStore(STORE).put(val, key); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); } catch (e) { /* 캐시 실패는 무시 */ } }
+export async function cacheClear() { try { const db = await idb(); await new Promise((res) => { const t = db.transaction(STORE, 'readwrite').objectStore(STORE).clear(); t.onsuccess = () => res(); t.onerror = () => res(); }); } catch (e) {} }
+
+let versions = null; // { dataset: { ver, cnt } }
+async function fetchVersions() {
+  const { data, error } = await supabase.rpc('dataset_versions');
+  if (error) { console.warn('dataset_versions 실패(0003 SQL 미실행?):', error.message); return {}; }
+  const m = {}; (data || []).forEach(r => { m[r.dataset] = { ver: r.ver, cnt: Number(r.cnt) }; });
+  return m;
+}
+async function fetchDatasetPaged(key) {
   const PAGE = 1000; let from = 0; const out = [];
   for (;;) {
     const { data, error } = await supabase.from('rows').select('data').eq('dataset', key).order('id').range(from, from + PAGE - 1);
@@ -214,16 +236,29 @@ async function fetchDataset(key) {
   }
   return out;
 }
+async function fetchDataset(key) {
+  const { data, error } = await supabase.rpc('dataset_rows', { p_dataset: key });
+  if (error) { console.warn('dataset_rows 실패 → 페이지 방식으로 대체:', error.message); return fetchDatasetPaged(key); }
+  return Array.isArray(data) ? data : [];
+}
 export async function loadKeys(keys, force) {
   const need = (keys || []).filter(k => DATASETS[k] && (force || !KJHub.data[k]) && !LOADING[k]);
   if (!need.length) return;
+  if (!versions || force) versions = await fetchVersions();
   await Promise.all(need.map(async k => {
     LOADING[k] = true; setMeta(k, 'loading');
     try {
-      const rows = await fetchDataset(k);
-      KJHub.data[k] = rows; setMeta(k, 'ready', rows.length.toLocaleString('ko-KR') + '건');
+      const v = versions[k];
+      if (v && v.cnt === 0) { KJHub.data[k] = []; setMeta(k, 'ready', '0건'); KJHub.publish(); return; }
+      let rows = null, src = '';
+      const cached = force ? null : await cacheGet(k);
+      if (cached && v && cached.ver === v.ver && Array.isArray(cached.rows)) { rows = cached.rows; src = '캐시'; }
+      else { rows = await fetchDataset(k); src = '서버'; if (v) await cachePut(k, { ver: v.ver, rows }); }
+      KJHub.data[k] = rows;
+      setMeta(k, 'ready', rows.length.toLocaleString('ko-KR') + '건 · ' + src);
+      console.log('[KJHub] ' + k + ' ' + rows.length + '건 (' + src + ')', rows[0] ? Object.keys(rows[0]).slice(0, 12) : '열 없음');
       KJHub.publish();
-    } catch (e) { setMeta(k, 'error', e.message || String(e)); }
+    } catch (e) { console.error('[KJHub] ' + k + ' 로딩 실패', e); setMeta(k, 'error', e.message || String(e)); }
     finally { LOADING[k] = false; }
   }));
 }
