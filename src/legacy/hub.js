@@ -7,11 +7,7 @@ export const KJHub = {
     // { purchase: rows|null, expense, sale, voucher, ... }
     meta: {},
     // { 키: { state: idle|loading|ready|error, note } }
-    publish() {
-      const t0 = performance.now();
-      window.dispatchEvent(new CustomEvent('kjhub:data', { detail: { data: this.data } }));
-      console.log('[KJHub] 화면 계산(publish) ' + Math.round(performance.now() - t0) + 'ms');
-    },
+    publish(changedKeys) { publishGated(changedKeys); },
     // ── 화면별 권한: 이 화면에서 볼 수 있는 부서 목록 ──────────────────
     //   반환 null = 제한 없음(전체) / [] = 이 화면 권한 없음 / [부서..] = 그 부서만
     screenDepts(screenTitle) {
@@ -163,6 +159,79 @@ KJHub.setCloseMonth = (v, opts) => {
   if (changed || (opts && opts.force)) { try { window.dispatchEvent(new CustomEvent('kjhub:closemonth', { detail: { month: v } })); } catch (e) {} }
 };
 
+// ── 화면별 계산 게이트 ───────────────────────────────────
+//  기존 화면 모듈들은 'kjhub:data' 가 오면 전부 다시 계산한다(한 번에 20~30초).
+//  → 모듈 초기화 중에 등록되는 'kjhub:data' 리스너를 모듈별로 가로채 두고,
+//    데이터가 바뀌면 "지금 보이는 화면의 모듈"만 즉시 계산, 나머지는 dirty 표시 후 그 화면을 열 때 계산.
+export const MODULE_SCREENS = {
+  deptCost: ['dept-cost'], matInput: ['mat-input'], trade: ['purchase-sales'], mats: ['alloc-mats'],
+  support: ['support'], deptSupport: ['dept-support'], lotStock: ['lot-stock'],
+  profit: ['margin-alloc', 'bu-margin', 'bu-margin-my', 'bu-margin-real', 'alloc-settings', 'alloc-items'],
+};
+const moduleListeners = Object.create(null); // module -> [fn]
+const dirty = Object.create(null);           // module -> true
+let curModule = null;
+const GATED = new Set(['kjhub:data', 'kjhub:results']);
+const ALWAYS = new Set(['trade']); // 구매/판매 결과(results)를 수익 화면들이 쓰므로 항상 계산
+const _add = window.addEventListener.bind(window), _remove = window.removeEventListener.bind(window);
+window.addEventListener = function (type, fn, opts) {
+  if (GATED.has(type) && typeof fn === 'function') {
+    const m = curModule || 'trade'; // 초기화 밖(React effect 등)에서 등록되는 것은 구매/판매 모듈
+    (moduleListeners[m] = moduleListeners[m] || []).push({ type, fn });
+    return;
+  }
+  return _add(type, fn, opts);
+};
+window.removeEventListener = function (type, fn, opts) {
+  if (GATED.has(type)) { for (const m in moduleListeners) moduleListeners[m] = moduleListeners[m].filter(l => l.fn !== fn); return; }
+  return _remove(type, fn, opts);
+};
+export function beginModule(name) { curModule = name; }
+export function endModule() { curModule = null; }
+function moduleOfScreen(id) { for (const m in MODULE_SCREENS) if (MODULE_SCREENS[m].includes(id)) return m; return null; }
+function runModule(m, why, onlyType) {
+  const fns = (moduleListeners[m] || []).filter(l => !onlyType || l.type === onlyType);
+  if (!fns.length) { dirty[m] = false; return; }
+  const t0 = performance.now();
+  const evs = { 'kjhub:data': new CustomEvent('kjhub:data', { detail: { data: KJHub.data } }), 'kjhub:results': new CustomEvent('kjhub:results') };
+  const seen = new Set();
+  fns.slice().forEach(l => { if (seen.has(l.fn)) return; seen.add(l.fn); try { l.fn.call(window, evs[l.type]); } catch (e) { console.error('[KJHub] ' + m + ' 계산 오류', e); } });
+  dirty[m] = false;
+  console.log('[KJHub] 화면 계산 ' + m + ' (' + why + ') ' + Math.round(performance.now() - t0) + 'ms');
+}
+function publishGated(changedKeys) {
+  const keys = changedKeys || Object.keys(KJHub.data);
+  const activeM = moduleOfScreen(activeScreen);
+  for (const m in MODULE_SCREENS) {
+    const screens = MODULE_SCREENS[m];
+    const needs = new Set(screens.flatMap(sc => SCREEN_DATASETS[sc] || []));
+    if (!keys.some(k => needs.has(k))) continue; // 이 모듈과 무관한 데이터
+    if (ALWAYS.has(m)) { runModule(m, '데이터 ' + keys.join(','), 'kjhub:data'); continue; }
+    if (m === activeM) {
+      const activeNeeds = SCREEN_DATASETS[activeScreen] || [];
+      if (keys.some(k => activeNeeds.includes(k))) runModule(m, '데이터 ' + keys.join(','), 'kjhub:data');
+      else dirty[m] = true;
+    } else dirty[m] = true;
+  }
+}
+// 구매/판매 모듈이 보내는 'kjhub:results' 도 같은 규칙으로 (보이는 화면만 즉시, 나머지는 dirty)
+let resultsTimer = null;
+const _dispatch = window.dispatchEvent.bind(window);
+window.dispatchEvent = function (ev) {
+  if (ev && ev.type === 'kjhub:results') {
+    clearTimeout(resultsTimer);
+    resultsTimer = setTimeout(() => {
+      const activeM = moduleOfScreen(activeScreen);
+      for (const m in MODULE_SCREENS) {
+        if (!(moduleListeners[m] || []).some(l => l.type === 'kjhub:results')) continue;
+        if (m === activeM) runModule(m, 'results', 'kjhub:results'); else dirty[m] = true;
+      }
+    }, 400); // 연속으로 오는 results 는 한 번으로 합침
+    return true;
+  }
+  return _dispatch(ev);
+};
+
 // ── 화면 전환 (React 라우터가 호출) ─────────────────────
 let activeScreen = null;
 let navHook = null; // (screenId) => void  — React 쪽 라우팅
@@ -174,6 +243,8 @@ KJHub.showScreen = function (id, opts) {
   if (prev && prev !== id) SCROLL_POS[prev] = window.scrollY || 0;
   activeScreen = id;
   document.querySelectorAll('section.hub-screen').forEach(el => el.classList.toggle('hidden', el.id !== 'screen-' + id));
+  const m = moduleOfScreen(id);
+  if (m && dirty[m]) setTimeout(() => runModule(m, '화면 열림'), 30); // 미뤄둔 계산을 이 화면 것만 수행
   const y = SCROLL_POS[id] || 0;
   requestAnimationFrame(() => window.scrollTo(0, y));
   if (!o.fromRouter && navHook) navHook(id);
@@ -282,7 +353,7 @@ export async function loadKeys(keys, force) {
     finally { LOADING[t.k] = false; }
     await sleep(0); // 파싱 사이에 화면이 숨 쉴 틈
   }
-  KJHub.publish();
+  KJHub.publish(need);
 }
 export const loadAll = force => loadKeys(Object.keys(DATASETS), force);
 
@@ -302,20 +373,14 @@ export const SCREEN_DATASETS = {
   'alloc-mats': ['purchase', 'matinput'],
   'support': ['dept', 'headcount'],
 };
-// 보고 있는 화면 것부터 받고, 나머지는 한가할 때 하나씩
+// 보고 있는 화면 것부터 받고, 나머지는 잠시 뒤 한 번에 (계산 횟수를 줄이기 위해 묶어서)
 let bgTimer = null;
 export async function loadForScreen(screenId) {
   const first = SCREEN_DATASETS[screenId] || [];
   await loadKeys(first);
   clearTimeout(bgTimer);
-  const rest = Object.keys(DATASETS).filter(k => !KJHub.data[k]);
-  const step = async () => {
-    const k = Object.keys(DATASETS).find(x => !KJHub.data[x] && !LOADING[x]);
-    if (!k) return;
-    await loadKeys([k]);
-    bgTimer = setTimeout(step, 1500);
-  };
-  if (rest.length) bgTimer = setTimeout(step, 1500);
+  const rest = Object.keys(DATASETS).filter(k => !KJHub.data[k] && !LOADING[k]);
+  if (rest.length) bgTimer = setTimeout(() => loadKeys(rest), 800);
 }
 
 // 설정(마감월) 초기 로드

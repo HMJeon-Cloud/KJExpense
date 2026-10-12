@@ -7,7 +7,7 @@ import * as lucide from 'lucide';
 import { useLocation, useNavigate } from 'react-router-dom';
 import sectionsHtml from './sections.html?raw';
 import './legacy.css';
-import { KJHub, setNavHook, setUser, loadAll, loadForScreen, loadCloseMonth, onMeta, cacheClear } from './hub';
+import { KJHub, setNavHook, setUser, loadAll, loadForScreen, loadCloseMonth, onMeta, cacheClear, beginModule, endModule } from './hub';
 import { installGsShim } from './gsShim';
 import { useAuth } from '../lib/auth';
 import { DATASETS } from '../lib/supabase';
@@ -40,8 +40,11 @@ function bootOnce(container: HTMLElement) {
   installGsShim();
   container.innerHTML = sectionsHtml;
   // 기존 화면 모듈 초기화 (DOM 주입 후)
-  for (const init of [initDeptCost, initMatInput, initProfit, initTrade, initMats, initSupport, initDeptSupport, initLotStock]) {
-    try { init(); } catch (e) { console.error('legacy init error', e); }
+  const mods: [string, () => void][] = [['deptCost', initDeptCost], ['matInput', initMatInput], ['profit', initProfit], ['trade', initTrade], ['mats', initMats], ['support', initSupport], ['deptSupport', initDeptSupport], ['lotStock', initLotStock]];
+  for (const [name, init] of mods) {
+    beginModule(name);
+    try { init(); } catch (e) { console.error('legacy init error', name, e); }
+    endModule();
   }
   try { lucideShim.createIcons(); } catch { /* noop */ }
 }
