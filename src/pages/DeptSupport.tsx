@@ -1,5 +1,6 @@
 // 부서별 지원 내역 — 받는 부서 기준: 어떤 부서의 어떤 업무 지원을 받아 얼마를 부담하는가
 //   결론(총 부담액·부서별) → 지원 부서별 → 부서별 상세 표(기본 펼침). 금액은 기존 지원 모듈(__kjSupport.detailsFor)이 계산합니다.
+import { ListHead } from '../components/ListHead';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { fmt } from '../components/ui';
@@ -90,11 +91,11 @@ export default function DeptSupport() {
               </div>
               <div>
                 <div className="l">받는 부서별 부담액<HelpDot id="support.view" /> <span>누르면 그 부서만</span></div>
-                <div className="rk">{byDept.slice(0, 12).map(([d, v, n]) => <div key={d} className={'r' + (deptSel === d ? ' on' : '')} onClick={() => setDeptSel(deptSel === d ? '' : d)}><div><div className="nm">{d}<small>{hqOf[d]} · {n}건 · {total > 0 ? Math.round(v / total * 100) : 0}%</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}</div>
+                <div className="rk">{byDept.length > 0 && <ListHead cls="r" cols={['받는 부서 · 본부 · 건수 · 비중', '>부담액(원)']} />}{byDept.slice(0, 12).map(([d, v, n]) => <div key={d} className={'r' + (deptSel === d ? ' on' : '')} onClick={() => setDeptSel(deptSel === d ? '' : d)}><div><div className="nm">{d}<small>{hqOf[d]} · {n}건 · {total > 0 ? Math.round(v / total * 100) : 0}%</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}</div>
               </div>
               <div>
                 <div className="l">지원하는 부서별<HelpDot id="support.view" /> <span>누르면 그 부서가 준 지원만</span></div>
-                <div className="rk">{byFrom.slice(0, 12).map(([f, v]) => <div key={f} className={'r' + (fromSel === f ? ' on' : '')} onClick={() => setFromSel(fromSel === f ? '' : f)}><div><div className="nm">{f}<small>업무 {v.tasks.size}개 · {v.n}건</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxF * 100)) + '%', background: '#1f6fe8' }} /></div></div><span className="n">{fmt(v.amt)}</span></div>)}</div>
+                <div className="rk">{byFrom.length > 0 && <ListHead cls="r" cols={['지원하는 부서 · 업무 수 · 건수', '>지원 금액(원)']} />}{byFrom.slice(0, 12).map(([f, v]) => <div key={f} className={'r' + (fromSel === f ? ' on' : '')} onClick={() => setFromSel(fromSel === f ? '' : f)}><div><div className="nm">{f}<small>업무 {v.tasks.size}개 · {v.n}건</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxF * 100)) + '%', background: '#1f6fe8' }} /></div></div><span className="n">{fmt(v.amt)}</span></div>)}</div>
               </div>
             </div>
 

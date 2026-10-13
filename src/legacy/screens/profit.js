@@ -1540,10 +1540,11 @@ export default function init() {
       amap.forEach((ent, dname) => {
         if (!deptAllowed(dname)) return; // 화면 권한 밖 부서의 배분 수익 제외
         const ser = allocSeriesFor(ent.parts, months, dname);
-        if (!ser.some(v => v > 0)) return;
+        // 실현 수익 화면: 배분 비율이 없어도 실현 수익이 있는 부서는 모두 포함 (전체 = 회사 실현 수익과 일치)
+        const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser;
+        if (REALIZED ? !use.some(v => v !== 0) : !ser.some(v => v > 0)) return;
         const hq = hqm[norm(dname)] || '기타';
         if (!hqAllocSeries[hq]) { hqAllocSeries[hq] = months.map(() => 0); hqAllocCnt[hq] = 0; }
-        const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser;
         use.forEach((v, i) => { hqAllocSeries[hq][i] += v; });
         hqAllocCnt[hq]++;
       });
@@ -1787,7 +1788,7 @@ export default function init() {
             const byGroup = GROUPS.map(g => { const mm = groupMonthlyMargin(g); const ser = months.map(m => mm[m] || 0); return { key: g.key, label: g.label, series: ser, cur: ser[ser.length - 1] || 0, prev: ser.length > 1 ? ser[ser.length - 2] : 0, sum: ser.reduce((a, b) => a + b, 0) }; }).filter(x => x.series.some(v => v !== 0));
             const byBUList = busAll.map(b => { const ser = buSeries[b]; return { bu: b, series: ser, cur: ser[ser.length - 1] || 0, prev: ser.length > 1 ? ser[ser.length - 2] : 0, sum: ser.reduce((a, b2) => a + b2, 0) }; }).filter(x => x.series.some(v => v !== 0));
             const byDeptList = [];
-            amap.forEach((ent, dname) => { if (!deptAllowed(dname)) return; const ser = allocSeriesFor(ent.parts, months, dname); const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser; if (!use.some(v => v > 0)) return; byDeptList.push({ d: dname, hq: hqm[norm(dname)] || '기타', cur: use[use.length - 1] || 0, prev: use.length > 1 ? use[use.length - 2] : 0, sum: use.reduce((a, b) => a + b, 0), groups: ent.parts.map(p => p.g.label), support: REALIZED ? 0 : supportGive(dname, cur) }); });
+            amap.forEach((ent, dname) => { if (!deptAllowed(dname)) return; const ser = allocSeriesFor(ent.parts, months, dname); const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser; if (!use.some(v => REALIZED ? v !== 0 : v > 0)) return; byDeptList.push({ d: dname, hq: hqm[norm(dname)] || '기타', cur: use[use.length - 1] || 0, prev: use.length > 1 ? use[use.length - 2] : 0, sum: use.reduce((a, b) => a + b, 0), groups: ent.parts.map(p => p.g.label), support: REALIZED ? 0 : supportGive(dname, cur) }); });
             byDeptList.sort((a, b) => b.cur - a.cur);
             return { byGroup, byBU: byBUList, byDept: byDeptList, supportCur: REALIZED ? 0 : (supAllocSeriesBU[months.length - 1] || 0) };
           })(),

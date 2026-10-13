@@ -1,5 +1,6 @@
 // Lot별 재고조회 — 결론(재고금액·유효기간 경고) → 사업장·품목 구성 → 사업장별 LOT 표
 //   데이터 해석 규칙은 기존 모듈(legacy/screens/lotStock.js)과 동일합니다.
+import { ListHead } from '../components/ListHead';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { fmt } from '../components/ui';
 import { HelpDot } from '../components/Help';
@@ -119,6 +120,7 @@ export default function LotStock() {
               <div>
                 <div className="l">품목별 재고 TOP 10<HelpDot id="stock.items" /> <span>누르면 그 품목만</span></div>
                 <div className="rk" style={{ padding: '6px 0 0' }}>
+                  {byItem.length > 0 && <ListHead cls="r" cols={['품목 · 수량 · LOT 수', '>재고금액(원)']} style={{ gridTemplateColumns: 'minmax(0,1fr) 100px' }} />}
                   {byItem.slice(0, 10).map(([k, v]) => <div key={k} className={'r' + (itemSel === k ? ' on' : '')} style={{ gridTemplateColumns: 'minmax(0,1fr) 100px' }} onClick={() => setItemSel(itemSel === k ? '' : k)}>
                     <div><div className="nm">{k}<span className="help" style={{ marginLeft: 6 }}>{fmtF(v.qty)}{v.unit} · {v.n}LOT</span></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxI * 100)) + '%' }} /></div></div>
                     <span className="n" style={{ fontWeight: 700 }}>{fmt(v.amt)}</span>

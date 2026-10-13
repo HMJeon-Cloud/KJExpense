@@ -1,5 +1,6 @@
 // 지원 내역 설정 — 지원 부서가 어떤 업무를 어느 부서에 지원하고, 그 비용을 어떻게 나눌지
 //   위: 이 달 합계·받는 부서별 부담(미리보기)  아래: 지원 부서 카드 × 업무 행(기본 펼침). 저장은 기존 지원 모듈이 수행.
+import { ListHead } from '../components/ListHead';
 import { useMemo, useState } from 'react';
 import { fmt, useUI } from '../components/ui';
 import { HelpDot } from '../components/Help';
@@ -77,7 +78,7 @@ export default function SupportSettings() {
         .ss .inp.sm{padding:3px 6px;font-size:12.5px}
         .ss .x{cursor:pointer;color:var(--fg-3);padding:0 4px}.ss .x:hover{color:var(--neg)}
         @media(max-width:820px){.ss table.sst{min-width:760px}.ss .gh .inp{flex:1 1 160px}}
-        @media(max-width:1000px){.ss .verdict{grid-template-columns:1fr}.ss .verdict>div+div{border-left:0;border-top:1px solid var(--line)}.ss .rk{grid-template-columns:1fr}}
+        @media(max-width:1000px){.ss .rk>.lh2{display:none}.ss .verdict{grid-template-columns:1fr}.ss .verdict>div+div{border-left:0;border-top:1px solid var(--line)}.ss .rk{grid-template-columns:1fr}}
       `}</style>
       <div className="ss" style={{ display: 'grid', gap: 16 }}>
         <div className="page-head" style={{ alignItems: 'flex-end' }}>
@@ -96,7 +97,7 @@ export default function SupportSettings() {
           </div>
           <div>
             <div className="l">받는 부서별 부담액<HelpDot id="set.support" /> <span>지금 입력값 기준 미리보기 · 누르면 그 부서가 포함된 업무만 강조</span></div>
-            <div className="rk">{view.byRecv.map(([d, v, n]) => <div key={d} className={'r' + (focus === d ? ' on' : '')} onClick={() => setFocus(focus === d ? '' : d)}><div><div className="nm">{d}<small>{n}건 · {view.total ? Math.round(v / view.total * 100) : 0}% · 인원 {b.headcountOf(d)}</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxR * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}
+            <div className="rk">{view.byRecv.length > 0 && <><ListHead cls="r" cols={['받는 부서 · 건수 · 비중 · 인원', '>부담액(원)']} /><ListHead cls="r lh2" cols={['받는 부서 · 건수 · 비중 · 인원', '>부담액(원)']} /></>}{view.byRecv.map(([d, v, n]) => <div key={d} className={'r' + (focus === d ? ' on' : '')} onClick={() => setFocus(focus === d ? '' : d)}><div><div className="nm">{d}<small>{n}건 · {view.total ? Math.round(v / view.total * 100) : 0}% · 인원 {b.headcountOf(d)}</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxR * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}
               {!view.byRecv.length && <div className="empty">아직 지원 내역이 없습니다.</div>}</div>
           </div>
         </div>

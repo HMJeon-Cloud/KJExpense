@@ -67,6 +67,7 @@ export default function AllocGroups() {
         .ag .gh .m{margin-left:auto;text-align:right}.ag .gh .m b{font-family:var(--font-num);font-size:15px}.ag .gh .m small{display:block;color:var(--fg-3);font-size:11px}
         .ag table{width:100%;border-collapse:collapse;font-size:13px}
         .ag td{padding:5px 10px;border-bottom:1px solid var(--line)}
+        .ag th{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:11.5px;font-weight:500;color:var(--fg-3);white-space:nowrap}
         .ag td.n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
         .ag .share{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden}.ag .share i{display:block;height:100%;background:var(--c);border-radius:999px}
         .ag .x{color:var(--fg-3);cursor:pointer;padding:0 4px}.ag .x:hover{color:var(--neg)}
@@ -109,7 +110,7 @@ export default function AllocGroups() {
                   <span className={'sum' + (x.ok ? '' : ' bad')}>합계 {Math.round(x.sum * 100) / 100}%</span>
                   <div className="m"><b>{fmt(x.margin)}</b><small>{x.manual != null ? '수동 수익' : ymLabel(month) + ' 그룹 수익'}</small></div>
                 </div>
-                <table><tbody>
+                <table><thead><tr><th>부서</th><th colSpan={2}>배분 비율</th><th>비율 막대</th><th style={{ textAlign: 'right' }}>배분 수익(원)</th><th></th></tr></thead><tbody>
                   {x.rows.map((r, i) => <tr key={r.dept} style={{ background: focusDept === r.dept ? 'var(--brand-soft)' : undefined }}>
                     <td style={{ fontWeight: 600, width: '36%' }}>{r.dept}</td>
                     <td style={{ width: 90 }}><NumCell value={r.pct} onCommit={v => b.setPct(x.g.key, i, v ?? 0)} width={76} /></td>

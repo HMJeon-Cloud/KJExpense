@@ -81,7 +81,7 @@ export function Spark({ series, color = C.margin, h = 64 }: { series: number[]; 
 
 /** 도넛 + 범례 */
 const PALETTE = ['#1f6fe8', '#f26a1b', '#3aa63a', '#f5b400', '#7c3aed', '#0891b2', '#9ccf2a', '#64748b'];
-export function Donut({ slices, total, centerLabel }: { slices: { a: string; v: number; kws?: string[] }[]; total: number; centerLabel: string }) {
+export function Donut({ slices, total, centerLabel, head = '항목' }: { slices: { a: string; v: number; kws?: string[] }[]; total: number; centerLabel: string; head?: string }) {
   const R = 64, r = 42, cx = 80, cy = 80;
   let acc = 0;
   const arcs = slices.map((s, i) => {
@@ -99,6 +99,7 @@ export function Donut({ slices, total, centerLabel }: { slices: { a: string; v: 
         <text x={cx} y={cy + 13} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--fg)" fontFamily="var(--font-num)">{short(total)}</text>
       </svg>
       <div style={{ display: 'grid', gap: 5, minWidth: 0, flex: 1 }}>
+        <div className="row lh" style={{ gap: 8 }}><i style={{ width: 10, flexShrink: 0 }} /><span style={{ flex: 1 }}>{head}</span><span>금액</span><span style={{ width: 42, textAlign: 'right' }}>비중</span></div>
         {arcs.map((a, i) => (
           <div key={i} className="row" style={{ gap: 8, fontSize: 12.5 }}>
             <i style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />

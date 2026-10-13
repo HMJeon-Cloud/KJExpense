@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmt } from '../components/ui';
 import { HelpDot } from '../components/Help';
+import { HELP } from '../lib/helpDocs';
+import { ListHead } from '../components/ListHead';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL, C } from '../components/charts';
 
 type Model = {
@@ -32,6 +34,7 @@ const shiftMonth = (ym: string, d: number) => { const y = +ym.slice(0, 4), m = +
 
 export default function BuDashboard({ variant, title }: { variant: '' | '-my' | '-real'; title: string }) {
   const id = 'bu-margin' + variant;
+  const hid = (k: string) => (variant === '-real' && HELP['bu-real.' + k] ? 'bu-real.' : 'bu.') + k; // 실현 수익 화면은 전용 설명
   const [model, setModel] = useState<Model | null>(() => KJ()?.models?.[id] ?? null);
   const [ctl, setCtl] = useState({ baseMonth: '', months: 6 });
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -126,12 +129,13 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
         .costgrid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
         .acc{display:grid;grid-template-columns:1fr 110px 150px;gap:8px;font-size:12.5px;padding:4px 0;cursor:pointer;align-items:center}
         .acc:hover{background:var(--surface-2)}
-        .toprow{display:grid;grid-template-columns:20px 130px 1fr 120px 60px;gap:10px;align-items:center;padding:7px 0;cursor:pointer}
+        .toprow{display:grid;grid-template-columns:20px 130px 1fr 120px 66px;gap:10px;align-items:center;padding:7px 0;cursor:pointer}
         .toprow:hover{background:var(--surface-2)}
-        .toprow.wide{grid-template-columns:20px 190px 1fr 120px 60px}
+        .toprow.wide{grid-template-columns:20px 190px 1fr 120px 66px}
+        .toprow>:last-child{white-space:nowrap;text-align:right}
         .bar{height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
         .bar i{display:block;height:100%;background:${C.cost};border-radius:999px}
-        @media (max-width:900px){.verdict{grid-template-columns:1fr}.verdict .big{border-right:0;border-bottom:1px solid var(--line)}.duo,.costgrid{grid-template-columns:1fr}.toprow{grid-template-columns:20px 100px 1fr 90px 50px}}
+        @media (max-width:900px){.verdict{grid-template-columns:1fr}.verdict .big{border-right:0;border-bottom:1px solid var(--line)}.duo,.costgrid{grid-template-columns:1fr}.toprow{grid-template-columns:20px 100px 1fr 90px 60px}}
       `}</style>
 
       <div className="ttl">
@@ -154,7 +158,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 1. 결론 */}
           <section className="verdict">
             <div className="big" style={{ borderTop: `4px solid ${d.net >= 0 ? '#3aa63a' : '#d93c3c'}` }}>
-              <span className="lbl">{ymL(model.cur)} 순수익 (수익 − 비용)<HelpDot id={variant === '-real' ? 'bu-real.verdict' : 'bu.verdict'} /></span>
+              <span className="lbl">{ymL(model.cur)} 순수익 (수익 − 비용)<HelpDot id={hid('verdict')} /></span>
               <span className="bignum" style={{ color: d.net >= 0 ? '#2c7f2c' : '#b32b2b' }}>{d.net >= 0 ? '+' : '−'}{kor(Math.abs(d.net))}</span>
               <span className="help num" style={{ textAlign: 'left' }}>{fmt(d.net)}원</span>
               <span className="ratio">비용/수익 <RatioBar ratio={d.r} /></span>
@@ -175,15 +179,15 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 2. 추이 + 주목할 변화 */}
           <div className="duo">
             <section className="sec">
-              <h2>월별 순수익 추이<HelpDot id={variant === '-real' ? 'bu-real.verdict' : 'bu.trend'} /></h2>
+              <h2>월별 순수익 추이<HelpDot id={hid('trend')} /></h2>
               <p className="lead">막대는 그 달의 순수익(초록 남음, 빨강 초과). 실선은 수익, 점선은 비용입니다.</p>
               <NetTrend months={model.months} margin={model.series.margin} cost={model.series.cost} height={300} />
             </section>
             <section className="sec">
-              <h2>이번 달 주목할 변화<HelpDot id="bu.alerts" /></h2>
+              <h2>이번 달 주목할 변화<HelpDot id={hid('alerts')} /></h2>
               <p className="lead">최근 평균보다 크게 늘거나 줄어든 부서 계정. 클릭하면 전표를 봅니다.</p>
               <div className="notable">
-                {d.notable.length === 0 && <span className="help">눈에 띄는 변화가 없습니다.</span>}
+                {d.notable.length === 0 ? <span className="help">눈에 띄는 변화가 없습니다.</span> : <ListHead cls="it" cols={['', '계정 · 부서', '>평소 대비']} style={{ paddingBlock: '0 5px' }} />}
                 {d.notable.map((x, i) => (
                   <div key={i} className="it" onClick={() => drill({ dept: x.d, acc: x.a })}>
                     <span className={'tag ' + (x.up ? 'n' : 'b')} style={{ padding: '2px 0', textAlign: 'center' }}>{x.up ? '▲' : '▼'}</span>
@@ -197,7 +201,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 3. 스코어보드 */}
           <section className="sec">
-            <h2>{model.deptLevel ? '부서별' : '본부별'} 현황<HelpDot id={variant === '-real' ? 'bu-real.scoreboard' : 'bu.scoreboard'} /></h2>
+            <h2>{model.deptLevel ? '부서별' : '본부별'} 현황<HelpDot id={hid('scoreboard')} /></h2>
             <p className="lead" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>{ymL(model.cur)} 기준. 비용/수익은 100%를 넘으면 수익보다 비용이 많다는 뜻입니다.</span>{!model.deptLevel && <span className="seg" style={{ marginLeft: 'auto' }}><button className={!allOpen ? 'on' : ''} onClick={() => { setAllOpen(false); setOpen({}); }}>본부만</button><button className={allOpen ? 'on' : ''} onClick={() => { setAllOpen(true); setOpen({}); }}>부서까지</button></span>}</p>
             <div className="tbl-wrap">
               <table className="score">
@@ -236,11 +240,12 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 4. 수익 구성 */}
           <section className="sec">
-            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 수익은 어디서 났나<HelpDot id="bu.revenue" /></h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
+            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 수익은 어디서 났나<HelpDot id={hid('revenue')} /></h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
             <p className="lead">{model.realized ? '사업장별 실현 수익과 부서별 수익입니다.' : '왼쪽은 구매/판매 이윤이 어느 팀 기준으로 발생했는지, 오른쪽은 배분 비율을 거쳐 부서에 돌아간 수익입니다.'}{model.revenue?.supportCur ? ` 지원 내역으로 받은 수익 ${kor(model.revenue.supportCur)}이 부서 수익에 포함돼 있습니다.` : ''}</p>
             {showRev && model.revenue && (
               <div className="costgrid">
                 <div>
+                  {!model.realized && model.revenue.byGroup.length > 0 && <ListHead cls="toprow wide" cols={['', '수익이 생긴 기준 (이윤 그룹)', '', '>' + ymL(model.cur) + ' 수익', '>전월비']} />}
                   {(model.realized ? [] : model.revenue.byGroup).slice().sort((a, b) => b.cur - a.cur).map((g, i, arr) => {
                     const max = Math.max(1, ...arr.map(x => Math.abs(x.cur)));
                     return (
@@ -256,6 +261,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                   {model.revenue.byBU.length > 0 && (
                     <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
                       <div className="help" style={{ marginBottom: 6 }}>사업장별 {model.realized ? '실현 수익' : '실현 수익 (참고)'}</div>
+                      <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장</span><span>{ymL(model.cur)} 실현 수익 · 전월비</span></div>
                       {model.revenue.byBU.slice().sort((a, b) => b.cur - a.cur).map(b => (
                         <div key={b.bu} className="row" style={{ justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{b.bu}</span><span className="row" style={{ gap: 10 }}><span className="num">{fmt(b.cur)}</span><Delta c={b.cur} p={b.prev} /></span></div>
                       ))}
@@ -264,6 +270,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                   {model.realized && !model.revenue.byBU.length && <span className="help">표시할 데이터가 없습니다.</span>}
                 </div>
                 <div>
+                  {model.revenue.byDept.length > 0 && <ListHead cls="toprow" cols={['', '부서', '', '>' + (model.realized ? '실현 수익' : '배분 수익'), '>전월비']} />}
                   {model.revenue.byDept.slice(0, 10).map((x, i, arr) => {
                     const max = Math.max(1, ...arr.map(t => Math.abs(t.cur)));
                     return (
@@ -284,13 +291,14 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 5. 비용 구성 */}
           <section className="sec">
-            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 비용은 어디서 나갔나<HelpDot id="bu.cost" /></h2><button className="btn sm ghost" onClick={() => setShowCost(s => !s)}>{showCost ? '접기' : '펼치기'}</button></div>
+            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 비용은 어디서 나갔나<HelpDot id={hid('cost')} /></h2><button className="btn sm ghost" onClick={() => setShowCost(s => !s)}>{showCost ? '접기' : '펼치기'}</button></div>
             <p className="lead">왼쪽은 {model.deptLevel ? '부서' : '본부'}별 구성과 주요 계정, 오른쪽은 비용이 큰 부서 10곳입니다. 항목을 클릭하면 전표를 봅니다.</p>
             {showCost && (
               <div className="costgrid">
                 <div>
-                  {model.donut.length ? <Donut slices={model.donut} total={sum(model.donut.map(x => x.v))} centerLabel={ymL(model.cur)} /> : <span className="help">기준월 비용 데이터가 없습니다.</span>}
+                  {model.donut.length ? <Donut slices={model.donut} total={sum(model.donut.map(x => x.v))} centerLabel={ymL(model.cur)} head={(model.deptLevel ? '부서' : '본부') + ' · 주요 계정'} /> : <span className="help">기준월 비용 데이터가 없습니다.</span>}
                   <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
+                    {model.divDetail.length > 0 && <ListHead cls="acc" cols={['계정 (' + (model.deptLevel ? '부서' : '본부') + '별 큰 순 3개)', '>금액', '>적요 키워드']} style={{ marginBottom: -6 }} />}
                     {model.divDetail.map(u => (
                       <div key={u.unit}>
                         <div className="row" style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: 4, marginBottom: 2 }}><b style={{ fontSize: 13 }}>{u.unit}</b><span className="num help">{fmt(u.total)}</span></div>
@@ -306,6 +314,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                   </div>
                 </div>
                 <div>
+                  {model.topDepts.length > 0 && <ListHead cls="toprow" cols={['', '부서', '', '>' + ymL(model.cur) + ' 전표 비용', '>전월비']} />}
                   {model.topDepts.map((x, i) => {
                     const max = Math.max(1, ...model.topDepts.map(t => t.v));
                     return (

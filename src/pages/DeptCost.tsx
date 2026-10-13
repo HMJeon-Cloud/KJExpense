@@ -1,4 +1,5 @@
 // 부서별 비용 — 전표 조회: 조건 → 계정별 합계 → 전표 상세 · CSV
+import { ListHead } from '../components/ListHead';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { fmt } from '../components/ui';
@@ -127,11 +128,13 @@ export default function DeptCost() {
         <div className="side">
           <div className="card"><div className="hd">부서별 합계<HelpDot id="cost.byDept" /> <span className="help" style={{ fontWeight: 400 }}>누르면 그 부서만</span></div>
             <div className="list" style={{ padding: 10 }}>
+              {byDept.length > 0 && <ListHead cls="li" cols={['부서', '', '>전표 비용', '>비중']} />}
               {byDept.slice(0, 30).map(([d, v]) => <div key={d} className={'li' + (depts.length === 1 && depts[0] === d ? ' on' : '')} onClick={() => setDepts(depts.length === 1 && depts[0] === d ? [] : [d])}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{d}</span><div className="hbar"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div><span className="num">{fmt(v)}</span><span className="help num">{total ? Math.round(v / total * 100) + '%' : ''}</span></div>)}
               {!byDept.length && <div className="empty">전표가 없습니다.</div>}
             </div></div>
           <div className="card"><div className="hd">계정별 합계<HelpDot id="cost.byAcc" /> <span className="help" style={{ fontWeight: 400 }}>누르면 그 계정만</span></div>
             <div className="list" style={{ padding: 10 }}>
+              {byAcc.length > 0 && <ListHead cls="li" cols={['계정', '', '>전표 비용', '>비중']} />}
               {byAcc.slice(0, 30).map(([a, v]) => <div key={a} className={'li' + (acc === a ? ' on' : '')} onClick={() => setAcc(acc === a ? '' : a)}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{a.replace(/^\((판|제)\)/, '')}</span><div className="hbar"><i style={{ width: Math.max(2, Math.round(v / maxA * 100)) + '%', background: '#1f6fe8' }} /></div><span className="num">{fmt(v)}</span><span className="help num">{total ? Math.round(v / total * 100) + '%' : ''}</span></div>)}
             </div></div>
         </div>

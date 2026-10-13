@@ -154,7 +154,7 @@ export default function DeptDashboard() {
                 <select id="al-hq" className="inp" style={{ padding: '3px 8px', fontSize: 12 }} value={hq} onChange={e => setHq(e.target.value)}><option value="">본부 전체</option>{hqs.map(h => <option key={h} value={h}>{h}</option>)}</select>
                 {sel && <button className="btn sm" onClick={() => setSel(null)}>부서 선택 해제 ({sel.size})</button>}
               </div>
-              <div className="dv">{[...rows].sort((a, b) => b.net - a.net).map(x => { const mx = Math.max(1, ...rows.map(y => Math.abs(y.net))); const w = Math.round(Math.abs(x.net) / mx * 50); return (
+              <div className="dv">{rows.length > 0 && <div className="dvr lh"><span>부서 · 비용/수익</span><span style={{ textAlign: 'center' }}>◀ 비용 초과 · 남김 ▶</span><span style={{ textAlign: 'right' }}>{ymL(model.cur)} 순수익</span></div>}{[...rows].sort((a, b) => b.net - a.net).map(x => { const mx = Math.max(1, ...rows.map(y => Math.abs(y.net))); const w = Math.round(Math.abs(x.net) / mx * 50); return (
                 <div key={x.d} className={'dvr' + (openDept === x.d ? ' on' : '')} onClick={() => setOpenDept(openDept === x.d ? null : x.d)} title={`${x.d} · 수익 ${fmt(x.curM)} · 비용 ${fmt(x.curC)}`}>
                   <span className="nm">{x.d}<small>{x.r == null ? '' : x.r + '%'}</small></span>
                   <span className="trk"><i className="negb" style={{ width: x.net < 0 ? w + '%' : 0 }} /><i className="posb" style={{ width: x.net >= 0 ? w + '%' : 0 }} /></span>
@@ -249,7 +249,7 @@ function DeptDetail({ x, model, onDrill }: { x: Dept & { r: number | null; curM:
         <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{ymL(model.cur)} 비용 구성</div>
-            {x.slices.length ? <Donut slices={x.slices} total={sum(x.slices.map(s => s.v))} centerLabel={ymL(model.cur)} /> : <span className="help">기준월 전표가 없습니다.</span>}
+            {x.slices.length ? <Donut slices={x.slices} total={sum(x.slices.map(s => s.v))} centerLabel={ymL(model.cur)} head="계정 · 적요 키워드" /> : <span className="help">기준월 전표가 없습니다.</span>}
             {x.slices.length > 0 && <div className="chips" style={{ marginTop: 8 }}>{x.slices.filter(s => s.a !== '기타').map(s => <button key={s.a} className="btn sm ghost" onClick={() => showVouchers(s.a)}>{s.a.replace(/^\((판|제)\)/, '')} 전표</button>)}</div>}
           </div>
           <div>
