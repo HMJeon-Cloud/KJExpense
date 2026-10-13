@@ -206,7 +206,7 @@ function publishGated(changedKeys) {
     const screens = MODULE_SCREENS[m];
     const needs = new Set(screens.flatMap(sc => SCREEN_DATASETS[sc] || []));
     if (!keys.some(k => needs.has(k))) continue; // 이 모듈과 무관한 데이터
-    if (ALWAYS.has(m)) { runModule(m, '데이터 ' + keys.join(','), 'kjhub:data'); continue; }
+    if (ALWAYS.has(m) && !KJHub.resultsFromDb) { runModule(m, '데이터 ' + keys.join(','), 'kjhub:data'); continue; }
     if (m === activeM) {
       const activeNeeds = SCREEN_DATASETS[activeScreen] || [];
       if (keys.some(k => activeNeeds.includes(k))) runModule(m, '데이터 ' + keys.join(','), 'kjhub:data');
@@ -250,6 +250,7 @@ KJHub.showScreen = function (id, opts) {
   if (!o.fromRouter && navHook) navHook(id);
 };
 KJHub.activeScreen = () => activeScreen;
+KJHub.runModuleNow = (m, why) => runModule(m, why || '요청', 'kjhub:data'); // 검증 화면: 구매/판매 계산을 지금 수행
 // 설정(지원 내역 등)이 바뀌었을 때 모듈을 다시 계산 — 보이는 화면이면 바로(합쳐서 1회), 아니면 그 화면을 열 때
 const refreshTimers = Object.create(null);
 KJHub.refreshModule = function (m, why) {
@@ -437,11 +438,12 @@ export async function loadKeys(keys, force) {
 export const loadAll = force => loadKeys(Object.keys(DATASETS), force);
 
 // 화면별 필요 데이터 (기존 셸의 SCREENS.datasets 와 동일)
+const TRADE_SETS = ['purchase', 'expense', 'sale'];
 export const SCREEN_DATASETS = {
-  'bu-margin': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount'],
-  'bu-margin-real': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount', 'synth', 'mfgcost', 'matinput'],
-  'bu-margin-my': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount'],
-  'margin-alloc': ['purchase', 'expense', 'sale', 'voucher', 'dept', 'headcount'],
+  'bu-margin': ['voucher', 'dept', 'headcount'],          // 수익은 DB 집계(results) — DB 집계가 없을 때만 구매/판매 데이터를 더 받음
+  'bu-margin-real': ['voucher', 'dept', 'headcount'],
+  'bu-margin-my': ['voucher', 'dept', 'headcount'],
+  'margin-alloc': ['voucher', 'dept', 'headcount'],
   'purchase-sales': ['purchase', 'expense', 'sale', 'synth', 'mfgcost', 'matinput'],
   'mat-input': ['matinput', 'synth', 'purchase'],
   'dept-cost': ['voucher'],
@@ -454,13 +456,44 @@ export const SCREEN_DATASETS = {
 };
 // 보고 있는 화면 것부터 받고, 나머지는 잠시 뒤 한 번에 (계산 횟수를 줄이기 위해 묶어서)
 let bgTimer = null;
+const PROFIT_SCREENS = new Set(['bu-margin', 'bu-margin-real', 'bu-margin-my', 'margin-alloc', 'alloc-settings']);
 export async function loadForScreen(screenId) {
-  const first = SCREEN_DATASETS[screenId] || [];
+  let first = (SCREEN_DATASETS[screenId] || []).slice();
+  if (PROFIT_SCREENS.has(screenId)) {
+    if (!KJHub.resultsFromDb) await loadResults('첫 화면');
+    if (!KJHub.resultsFromDb) first = first.concat(TRADE_SETS, screenId === 'bu-margin-real' ? ['synth', 'mfgcost', 'matinput'] : []); // DB 집계 없음 → 예전 방식
+  }
   await loadKeys(first);
   clearTimeout(bgTimer);
   const rest = Object.keys(DATASETS).filter(k => !KJHub.data[k] && !LOADING[k]);
   if (rest.length) bgTimer = setTimeout(() => loadKeys(rest), 800);
 }
+
+// ── B단계 2차: 수익 집계(사업단위·부서별 월 수익, 이윤 9종)를 DB에서 받기 ──
+//   0006·0007 SQL 이 있으면 구매/판매 데이터 없이도 국전·부서별 화면이 뜹니다. 없으면 예전처럼 브라우저 계산.
+KJHub.resultsFromDb = false;
+let resultsLoading = null;
+export async function loadResults(why) {
+  if (resultsLoading) return resultsLoading;
+  resultsLoading = (async () => {
+    const t0 = performance.now();
+    try {
+      const [a, b] = await Promise.all([supabase.rpc('trade_profit_groups'), supabase.rpc('trade_monthly_margin')]);
+      if (a.error) throw new Error(a.error.message); if (b.error) throw new Error(b.error.message);
+      const m = b.data || {};
+      KJHub.results = Object.assign({}, KJHub.results, { profitMonthlyByGroup: a.data || {}, marginMonthlyByBU: m.byBU || {}, marginMonthlyByDept: m.byDept || {}, marginMonthlyFull: m.full || {} });
+      KJHub.resultsFromDb = true;
+      console.log('[KJHub] 수익 집계 DB 수신 (' + (why || '') + ') ' + Math.round(performance.now() - t0) + 'ms · LOT ' + (m.lots || '?'));
+      try { window.dispatchEvent(new CustomEvent('kjhub:results')); } catch (e) {}
+    } catch (e) {
+      if (!KJHub.resultsFromDb) console.warn('[KJHub] 수익 집계 DB 없음(0006·0007 SQL 미실행?) → 브라우저 계산:', e.message);
+    } finally { resultsLoading = null; }
+  })();
+  return resultsLoading;
+}
+KJHub.refreshResults = why => loadResults(why || '갱신');
+window.addEventListener('kjhub:allocsaved', () => loadResults('설정 저장'));   // 판매가·배분 설정 저장 후
+window.addEventListener('kjhub:uploaded', () => loadResults('업로드'));        // 데이터 업로드 후
 
 // 설정(마감월) 초기 로드
 export async function loadCloseMonth() {

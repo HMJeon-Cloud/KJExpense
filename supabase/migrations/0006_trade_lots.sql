@@ -33,14 +33,18 @@ create or replace function public.kj_round(x numeric) returns numeric
 language sql immutable as $$ select floor(x + 0.5) $$;
 
 -- LOT 요약   ※ trade.js processData → lotSummaryRows (부서 분리 전)
+drop function if exists public.trade_lot_summary() cascade;
 create or replace function public.trade_lot_summary()
 returns table (
   lot_key text, biz_unit text, dept text, buyer text, item_no text, item_name text, vendor text, bl_no text, lot_no text, imp_kind text, asset_seq text,
   p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric,
   margin_unit numeric, cogs numeric, margin numeric, inv_qty numeric, inv_amt numeric, p_date text, s_date text,
-  monthly jsonb  -- 판매 발행월별 수익 {YYYYMM: Σ(_margin)}
+  monthly jsonb,   -- 판매 발행월별 수익 {YYYYMM: Σ(_margin)}
+  unit_won float8,  -- 첫 구매행의 단가(원) = PRICE × EXRATE (JS 와 같은 배정밀도)   ※ 이윤 9종용
+  proc_u numeric,   -- 입고월 제조원가 (없으면 null)
+  sales jsonb       -- 판매 행 [{q, a, m(발행월), as(자산순번), dp(부서)}]  ※ 이윤 9종용
 )
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public set jit = off as $$
 with
 p0 as materialized (select id, public.kj_norm(data) as d from public.rows where dataset = 'purchase'),
 e0 as materialized (select id, public.kj_norm(data) as d from public.rows where dataset = 'expense'),
@@ -63,7 +67,8 @@ p1 as materialized (
     public.kj_clean(public.kj_v(d, 'ITEMNAME', '품목')) as item_name_c,
     public.kj_clean(public.kj_v(d, 'CUSTNAME', '수입처')) as cust_c,
     public.kj_clean(public.kj_v(d, 'CUSTNO', '수입처번호')) as custno_c,
-    public.kj_clean(public.kj_v(d, 'ASSETSEQ', '자산순번')) as asset_c
+    public.kj_clean(public.kj_v(d, 'ASSETSEQ', '자산순번')) as asset_c,
+    (public.kj_num(public.kj_v(d, 'PRICE', '단가'))::float8 * public.kj_num(public.kj_v(d, 'EXRATE', '환율'))::float8) as unit_won  -- ※ JS 와 같은 배정밀도 곱셈
   from p0
 ),
 disposal as (  -- 폐기 수량: lot_item 키별 Σ|qty|   ※ disposalMap
@@ -87,7 +92,8 @@ s1 as materialized (
     public.kj_clean(public.kj_v(d, 'BIZUNITNAME', '사업단위')) as biz_c,
     public.kj_clean(public.kj_v(d, 'DEPTNAME', '부서')) as dept_c,
     public.kj_clean(public.kj_v(d, 'EMPNAME', '담당자')) as emp_c,
-    public.kj_clean(public.kj_v(d, 'ITEMNAME', '품목')) as item_name_c
+    public.kj_clean(public.kj_v(d, 'ITEMNAME', '품목')) as item_name_c,
+    public.kj_clean(public.kj_v(d, 'ASSETSEQ', '자산순번')) as asset_c
   from s0
 ),
 sm as materialized (
@@ -137,7 +143,8 @@ head as materialized (
     case when fp.key is not null then fp.item_name_c else fs.item_name_c end as item_name,
     case when fp.key is not null then fp.cust_c || ' (' || fp.custno_c || ')' else '(주)국전 (116-87-01173)' end as vendor,
     case when fp.key is not null then fp.imp_kind else '' end as imp_kind,
-    case when fp.key is not null then fp.asset_c else '' end as asset_seq
+    case when fp.key is not null then fp.asset_c else '' end as asset_seq,
+    case when fp.key is not null then fp.unit_won else 0::float8 end as unit_won
   from keys k
   left join firstp fp on fp.key = k.key
   left join firsts fs on fs.key = k.key
@@ -173,11 +180,12 @@ h3 as materialized (
   from h2 left join h2m mp on mp.key = h2.key
 ),
 -- 판매 행별 수익   ※ s._margin = amt − qty × marginUnit
-sr as materialized (select sm.key, sm.qty, sm.amt, sm.bdate, sm.bym, h3.margin_unit from sm join h3 on h3.key = sm.key),
+sr as materialized (select sm.id, sm.key, sm.qty, sm.amt, sm.bdate, sm.bym, sm.asset_c, sm.dept_c, h3.margin_unit from sm join h3 on h3.key = sm.key),
 smon as (select key, bym, sum(amt - qty * margin_unit) as v from sr where length(bym) = 6 group by key, bym),
 stot as (
-  select a.key, a.s_qty, a.s_amt, a.s_date, b.monthly
-  from (select key, sum(qty) as s_qty, sum(amt) as s_amt, max(bdate) as s_date from sr group by key) a
+  select a.key, a.s_qty, a.s_amt, a.s_date, b.monthly, a.sales
+  from (select key, sum(qty) as s_qty, sum(amt) as s_amt, max(bdate) as s_date,
+               jsonb_agg(jsonb_build_object('q', qty, 'a', amt, 'm', bym, 'as', asset_c, 'dp', dept_c) order by bdate, id) as sales from sr group by key) a
   left join (select key, jsonb_object_agg(bym, v) as monthly from smon group by key) b on b.key = a.key
 )
 select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vendor, h3.bl_no, h3.lot_no, h3.imp_kind, h3.asset_seq,
@@ -187,7 +195,8 @@ select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vend
   coalesce(st.s_amt, 0) - coalesce(st.s_qty, 0) * h3.margin_unit as margin,
   round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty, 4) as inv_qty,
   case when round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty, 4) > 0 then round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty, 4) * h3.unit_cost else 0 end as inv_amt,
-  h3.p_date, coalesce(st.s_date, ''), coalesce(st.monthly, '{}'::jsonb)
+  h3.p_date, coalesce(st.s_date, ''), coalesce(st.monthly, '{}'::jsonb),
+  h3.unit_won, h3.proc_u, coalesce(st.sales, '[]'::jsonb)
 from h3 left join stot st on st.key = h3.key
 $$;
 

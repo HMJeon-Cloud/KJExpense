@@ -79,6 +79,7 @@ export default function Verify() {
   const [err, setErr] = useState('');
   const [lot, setLot] = useState<{ js: number; sql: number; bad: number; missing: number; extra: number; diffs: LotDiff[]; byBU: Diff[]; byDept: Diff[]; ms: number; dbMonthly: { byBU: Record<string, Record<string, number>>; byDept: Record<string, Record<string, number>> }; jsMonthly: { byBU?: Record<string, Record<string, number>>; byDept?: Record<string, Record<string, number>> } } | null>(null);
   const [lotBusy, setLotBusy] = useState(false);
+  const [profitCmp, setProfitCmp] = useState<{ db: Record<string, Record<string, number>>; js: Record<string, Record<string, number>>; err: string } | null>(null);
   const [dbMonths, setDbMonths] = useState<{ ym: string; cnt: number }[] | null>(null);
   useEffect(() => { supabase.rpc('voucher_months').then(({ data, error }) => { if (!error && data) setDbMonths((data as { ym: string; cnt: number }[]).map(r => ({ ym: r.ym, cnt: Number(r.cnt) }))); }); }, []); // 한 번만 (매 갱신마다 부르면 서버에 부담)
 
@@ -104,10 +105,14 @@ export default function Verify() {
       const [a, b] = await Promise.all([supabase.rpc('trade_lot_summary_json'), supabase.rpc('trade_monthly_margin')]);
       if (a.error) throw new Error(a.error.message + ' (0006 SQL 실행 여부 확인)'); if (b.error) throw new Error(b.error.message);
       const sql = (a.data || []) as SqlLot[]; const dbM = b.data as { byBU: Record<string, Record<string, number>>; byDept: Record<string, Record<string, number>> };
-      const w = window as unknown as { KJHub?: { lotRows?: JsLot[]; results?: { marginMonthlyByBU?: Record<string, Record<string, number>>; marginMonthlyByDept?: Record<string, Record<string, number>> } } };
-      // 구매/판매 계산이 아직이면 잠시 기다림
+      const w = window as unknown as { KJHub?: { lotRows?: JsLot[]; resultsJs?: { marginMonthlyByBU?: Record<string, Record<string, number>>; marginMonthlyByDept?: Record<string, Record<string, number>>; profitMonthlyByGroup?: Record<string, Record<string, number>> }; results?: { marginMonthlyByBU?: Record<string, Record<string, number>>; marginMonthlyByDept?: Record<string, Record<string, number>> }; runModuleNow?: (m: string, why?: string) => void; resultsFromDb?: boolean } };
+      w.KJHub?.runModuleNow?.('trade', '검증'); // DB 집계 모드에서는 구매/판매 계산이 자동으로 돌지 않으므로 지금 수행
       for (let i = 0; i < 40 && !(w.KJHub?.lotRows && w.KJHub.lotRows.length); i++) await new Promise(r => setTimeout(r, 500));
-      const js = w.KJHub?.lotRows || []; const R = w.KJHub?.results || {};
+      const js = w.KJHub?.lotRows || []; const R = w.KJHub?.resultsJs || w.KJHub?.results || {};
+      // 이윤 9종: DB vs 화면
+      const pg = await supabase.rpc('trade_profit_groups');
+      const dbP = (pg.error ? null : pg.data) as Record<string, Record<string, number>> | null;
+      setProfitCmp(dbP ? { db: dbP, js: w.KJHub?.resultsJs?.profitMonthlyByGroup || {}, err: '' } : { db: {}, js: {}, err: pg.error?.message || '' });
       const c = compareLots(js, sql);
       const m2 = (x: Record<string, Record<string, number>> | undefined, y: Record<string, Record<string, number>> | undefined): Diff[] => { const out: Diff[] = []; const ks = new Set([...Object.keys(x || {}), ...Object.keys(y || {})]); ks.forEach(k => { const ms = new Set([...Object.keys(x?.[k] || {}), ...Object.keys(y?.[k] || {})]); ms.forEach(m => { const p = x?.[k]?.[m] || 0, q = y?.[k]?.[m] || 0; if (Math.abs(p - q) > 0.51) out.push({ dept: k, ym: m, acc: '', a: p, b: q }); }); }); return out; };
       setLot({ js: js.length, sql: sql.length, bad: c.bad, missing: c.missing, extra: c.extra, diffs: c.diffs, byBU: m2(R.marginMonthlyByBU, dbM.byBU), byDept: m2(R.marginMonthlyByDept, dbM.byDept), ms: Math.round(performance.now() - t0), dbMonthly: dbM, jsMonthly: { byBU: R.marginMonthlyByBU, byDept: R.marginMonthlyByDept } });
@@ -199,13 +204,25 @@ export default function Verify() {
           </div>
         </div>
 
-        <div className="card"><div className="hd">④ 수익(이윤 9종) — 현재 화면 계산값 <span className="help" style={{ fontWeight: 400 }}>2차(구매/판매 LOT·이윤 SQL)에서 DB 값과 대조할 기준표</span></div>
-          <div style={{ padding: 14 }}>
-            {!results?.profitMonthlyByGroup ? <div className="empty">구매/판매 계산 결과가 아직 없습니다.</div> : (() => { const g = results.profitMonthlyByGroup!; const months = Array.from(new Set(Object.values(g).flatMap(o => Object.keys(o)))).sort().slice(-12); const keys = Object.keys(g); return (
-              <div className="tbl-wrap"><table>
-                <thead><tr><th>그룹</th>{months.map(m => <th key={m} className="n">{ymLabel(m)}</th>)}<th className="n">합계</th></tr></thead>
-                <tbody>{keys.map(k => <tr key={k}><td style={{ fontWeight: 600 }}>{k}</td>{months.map(m => <td key={m} className="n">{fmt(g[k][m] || 0)}</td>)}<td className="n" style={{ fontWeight: 700 }}>{kor(months.reduce((s, m) => s + (g[k][m] || 0), 0))}</td></tr>)}</tbody>
-              </table></div>); })()}
+        <div className="card"><div className="hd">④ 수익(이윤 9종) — DB(SQL) vs 화면(JS) <span className="help" style={{ fontWeight: 400 }}>국전·부서별 화면의 수익 원천 (2차-2) · "LOT 대조 실행"을 누르면 함께 대조됩니다</span></div>
+          <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+            {profitCmp?.err && <div className="err">{profitCmp.err} (0007 SQL 실행 여부 확인)</div>}
+            {(() => {
+              const g = profitCmp && !profitCmp.err ? profitCmp.db : results?.profitMonthlyByGroup; const j = profitCmp?.js;
+              if (!g) return <div className="empty">구매/판매 계산 결과가 아직 없습니다.</div>;
+              const months = Array.from(new Set([...Object.values(g), ...Object.values(j || {})].flatMap(o => Object.keys(o)))).sort().slice(-12); const keys = Object.keys(g);
+              const diffs = j ? keys.flatMap(k => months.filter(m => Math.abs((g[k]?.[m] || 0) - (j[k]?.[m] || 0)) > 0.51).map(m => ({ k, m }))) : [];
+              return (<>
+                {j && <div className="row" style={{ gap: 8 }}><Badge ok={!diffs.length} label={`이윤 9종 DB = 화면 · 차이 ${diffs.length}칸`} /></div>}
+                <div className="tbl-wrap"><table>
+                  <thead><tr><th>그룹{j ? ' (DB / 화면)' : ''}</th>{months.map(m => <th key={m} className="n">{ymLabel(m)}</th>)}<th className="n">합계</th></tr></thead>
+                  <tbody>{keys.flatMap(k => [
+                    <tr key={k}><td style={{ fontWeight: 600 }}>{k}{j ? ' · DB' : ''}</td>{months.map(m => <td key={m} className="n">{fmt(g[k]?.[m] || 0)}</td>)}<td className="n" style={{ fontWeight: 700 }}>{kor(months.reduce((s, m) => s + (g[k]?.[m] || 0), 0))}</td></tr>,
+                    ...(j ? [<tr key={k + 'j'}><td className="help">{k} · 화면</td>{months.map(m => { const bad = Math.abs((g[k]?.[m] || 0) - (j[k]?.[m] || 0)) > 0.51; return <td key={m} className={'n' + (bad ? ' bad' : '')} style={{ color: 'var(--fg-3)' }}>{fmt(j[k]?.[m] || 0)}</td>; })}<td className="n" style={{ color: 'var(--fg-3)' }}>{kor(months.reduce((s, m) => s + (j[k]?.[m] || 0), 0))}</td></tr>] : []),
+                  ])}</tbody>
+                </table></div>
+              </>);
+            })()}
           </div>
         </div>
       </div>

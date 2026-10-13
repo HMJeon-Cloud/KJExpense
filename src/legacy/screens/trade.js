@@ -1380,13 +1380,14 @@ export default function init() {
             });
           });
           if (window.KJHub) {
-            window.KJHub.results = Object.assign({}, window.KJHub.results, {
-              marginMonthlyFull: fullMonthly,
-              marginMonthlyByBU: byBU,
-              marginMonthlyByDept: byDept,
-              profitMonthlyByGroup: byProfit
-            });
-            window.dispatchEvent(new CustomEvent('kjhub:results'));
+            const jsRes = { marginMonthlyFull: fullMonthly, marginMonthlyByBU: byBU, marginMonthlyByDept: byDept, profitMonthlyByGroup: byProfit };
+            window.KJHub.resultsJs = jsRes; // 검증용 (DB 계산과 대조)
+            if (window.KJHub.resultsFromDb) {
+              // ★ B단계: 수익 집계는 DB(trade_profit_groups 등)가 원천 — 화면 계산값으로 덮어쓰지 않음
+            } else {
+              window.KJHub.results = Object.assign({}, window.KJHub.results, jsRes);
+              window.dispatchEvent(new CustomEvent('kjhub:results'));
+            }
           }
         } catch (e) {/* 발행 실패해도 화면 동작에는 지장 없음 */}
         setLastLoadedAt(new Date());

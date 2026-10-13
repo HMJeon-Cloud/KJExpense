@@ -91,6 +91,7 @@ export default function Upload() {
       }
       const { data: n } = await supabase.rpc('finish_upload', { p_batch: batchId });
       toast(`${ds.label} ${fmt(n as number)}행 업로드 완료`);
+      try { window.dispatchEvent(new CustomEvent('kjhub:uploaded', { detail: { dataset } })); } catch { /* noop */ }
       setRows([]); setCols([]); setFile(null); if (inputRef.current) inputRef.current.value = '';
       await loadStatus();
     } catch (e) { toast('업로드 실패: ' + (e as Error).message, 'err'); } finally { setBusy(false); }
@@ -161,6 +162,7 @@ function ConfigImport({ onDone, actor }: { onDone: () => void; actor: string }) 
     try {
       for (const k of keys) { const { error } = await supabase.rpc('save_config', { p_key: k, p_value: cfg[k], p_summary: `Apps Script 설정 가져오기 (${actor})` }); if (error) throw error; }
       toast(`설정 ${keys.length}건 가져오기 완료`); setText(''); onDone();
+      try { window.dispatchEvent(new CustomEvent('kjhub:allocsaved')); } catch { /* noop */ }
     } catch (e) { toast('실패: ' + (e as Error).message, 'err'); } finally { setBusy(false); }
   }
   return (
