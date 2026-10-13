@@ -586,6 +586,7 @@ export default function init() {
   let __lastVoucherRows = null; // 동일 데이터 중복 처리 방지
   let __lastDeptRows = null; // 부서 마스터(사업단위 맵) 도착 시 재처리용
   function applyHubData() {
+    if (window.KJHub && window.KJHub.isReactScreen && window.KJHub.isReactScreen('dept-cost')) return; // 새 화면이 그림 — 중복 계산 방지
     const raw = window.KJHub && window.KJHub.data && window.KJHub.data.voucher;
     if (!raw) return;
     const deptRows = window.KJHub.data.dept || null;

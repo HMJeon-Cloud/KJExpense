@@ -173,7 +173,44 @@ export default function init() {
     const b = row[en];
     return b != null ? b : '';
   };
+  // ── B단계: DB 집계(voucher_agg)가 있으면 그것을 쓰고, 없으면 원본 행으로 계산 (규칙 동일) ──
+  function aggregateFromDb(title) {
+    const agg = hub().agg && hub().agg.voucher;
+    if (!Array.isArray(agg)) return null;
+    _aggCache = _aggCache || {};
+    const ck = 'db:' + title;
+    const hit = _aggCache[ck];
+    if (hit && hit.src === agg) return hit.out;
+    // 화면 권한(부서 제한)을 집계 행에도 같은 규칙으로 적용
+    const allow = hub().screenDepts ? hub().screenDepts(title) : null;
+    const nrm = v => String(v == null ? '' : v).replace(/\s+/g, '').toLowerCase();
+    let pass = () => true;
+    if (allow != null) {
+      const exact = new Set(), prefixes = [];
+      allow.forEach(d => { const t = nrm(d); if (!t) return; if (t.endsWith('*')) prefixes.push(t.slice(0, -1)); else exact.add(t); });
+      pass = allow.length === 0 ? () => false : d => { const v = nrm(d); return exact.has(v) || prefixes.some(p => p && v.indexOf(p) === 0); };
+    }
+    const deptMonth = {}, deptMonthAcc = {};
+    for (const r of agg) {
+      const dept = r.dept, m = r.ym, acc = r.acc, cost = Number(r.amt) || 0;
+      if (!dept || !m || !pass(dept)) continue;
+      if (!deptMonth[dept]) { deptMonth[dept] = {}; deptMonthAcc[dept] = {}; }
+      deptMonth[dept][m] = (deptMonth[dept][m] || 0) + cost;
+      if (!deptMonthAcc[dept][m]) deptMonthAcc[dept][m] = {};
+      deptMonthAcc[dept][m][acc] = (deptMonthAcc[dept][m][acc] || 0) + cost;
+    }
+    const out = { deptMonth, deptMonthAcc, fromDb: true };
+    _aggCache[ck] = { src: agg, out };
+    return out;
+  }
   function aggregate(screenTitle) {
+    const title = screenTitle || '부서별 수익/비용';
+    const db = aggregateFromDb(title);
+    if (db) return db;
+    return aggregateJs(title);
+  }
+  try { window.KJHub = window.KJHub || {}; window.KJHub.verifyVoucher = { db: t => aggregateFromDb(t || '부서별 수익/비용'), js: t => aggregateJs(t || '부서별 수익/비용') }; } catch (e) {}
+  function aggregateJs(screenTitle) {
     const title = screenTitle || '부서별 수익/비용';
     const rows = hub().rowsFor ? hub().rowsFor('voucher', title) : hub().data && hub().data.voucher;
     if (!rows) return {

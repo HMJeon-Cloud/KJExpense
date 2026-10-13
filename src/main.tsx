@@ -21,6 +21,7 @@ import DeptSupport from './pages/DeptSupport';
 import AllocGroups from './pages/AllocGroups';
 import AllocPrices from './pages/AllocPrices';
 import SupportSettings from './pages/SupportSettings';
+import Verify from './pages/Verify';
 import { PATH_SCREEN } from './legacy/LegacyHost';
 import { useLocation } from 'react-router-dom';
 
@@ -40,6 +41,7 @@ function Gate() {
         <Route path="/settings/upload" element={isAdmin ? <Upload /> : <Navigate to="/" />} />
         <Route path="/settings/employees" element={isAdmin ? <Employees /> : <Navigate to="/" />} />
         <Route path="/settings/history" element={isAdmin ? <History /> : <Navigate to="/" />} />
+        <Route path="/settings/verify" element={isAdmin ? <Verify /> : <Navigate to="/" />} />
         <Route path="/password" element={<ChangePassword />} />
         <Route path="/bu" element={<BuDashboard variant="" title="국전 수익/비용" />} />
         <Route path="/bu-real" element={<BuDashboard variant="-real" title="국전 수익/비용 (실현 수익)" />} />

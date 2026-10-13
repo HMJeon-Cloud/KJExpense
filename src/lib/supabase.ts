@@ -26,7 +26,7 @@ export const DATASETS: Record<string, { label: string; monthField: string[]; sna
   purchase:  { label: '구매',              monthField: ['PermitDate', 'PERMITDATE', '수입면장일자', 'InDate', 'P_INDATE', '입고일자'] },
   expense:   { label: '부대비용',          monthField: ['CostDate', 'COSTDATE', '비용일자', 'Date', 'DATE'] },
   sale:      { label: '판매',              monthField: ['BillDate', 'BILLDATE', '청구일자', '판매일자', '발행일자'] },
-  voucher:   { label: '전표',              monthField: ['Date', 'DATE', '전표일자', '일자'] },
+  voucher:   { label: '전표',              monthField: ['회계일', 'AccDate', 'Date', 'DATE', '전표일자', '일자'] },
   dept:      { label: '부서',              monthField: [], snapshot: true },
   headcount: { label: '월/부서별 인원',    monthField: ['WorkDate', 'WORKDATE', '년월'] },
   synth:     { label: '생산계획',          monthField: [], snapshot: true },

@@ -311,6 +311,39 @@ async function fetchDatasetText(key) {
   if (!res.ok) throw new Error('dataset_rows HTTP ' + res.status + ' (0003 SQL 실행 여부 확인)');
   return await res.text();
 }
+// ── B단계: 전표는 DB 집계 + 필요한 달 범위의 원본만 ─────────────────
+//   · voucher_agg(): 부서×월×계정 합계 (전체 기간) → KJHub.agg.voucher
+//   · voucher_rows_range(from, to): 마감월 기준 최근 N개월 원본 (전표 상세·키워드)
+//   0004 SQL 이 아직 없으면 예전 방식(전체 원본)으로 자동 복귀합니다.
+KJHub.agg = KJHub.agg || {};
+export const VOUCHER_WINDOW = 13; // 마감월 포함 13개월 (화면 최대 12개월 + 전월 비교)
+function voucherRange() {
+  const end = KJHub.closeMonth();
+  let y = +end.slice(0, 4), m = +end.slice(4, 6) - (VOUCHER_WINDOW - 1);
+  while (m < 1) { m += 12; y--; }
+  return { from: y + ('0' + m).slice(-2), to: '999912' }; // 마감월 이후 달도 포함 (업로드 직후 확인용)
+}
+KJHub.voucherRange = voucherRange;
+async function rpcText(name, body) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + name, {
+    method: 'POST', headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + (session ? session.access_token : SUPABASE_ANON), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error(name + ' HTTP ' + res.status);
+  return await res.text();
+}
+let _cmResolve = null; const closeMonthReady = new Promise(r => { _cmResolve = r; });
+async function fetchVoucherText(ver) {
+  await Promise.race([closeMonthReady, sleep(4000)]); // 마감월을 먼저 알아야 범위가 정확함
+  const r = voucherRange();
+  const ck = 'voucher@' + r.from;
+  const cached = await cacheGet(ck);
+  if (cached && ver && cached.ver === ver.ver && typeof cached.text === 'string' && typeof cached.agg === 'string') return { text: cached.text, agg: cached.agg, src: '캐시' };
+  const [agg, text] = await Promise.all([rpcText('voucher_agg'), rpcText('voucher_rows_range', { p_from: r.from, p_to: r.to })]);
+  if (ver) cachePut(ck, { ver: ver.ver, text, agg });
+  return { text, agg, src: '서버' };
+}
 async function fetchDatasetPaged(key) {
   const PAGE = 1000; let from = 0; const out = [];
   for (;;) {
@@ -337,6 +370,10 @@ export async function loadKeys(keys, force) {
     try {
       const v = versions[k];
       if (v && v.cnt === 0) return { k, text: '[]', src: '없음' };
+      if (k === 'voucher') {
+        try { const r = await fetchVoucherText(force ? null : v); return { k, text: r.text, agg: r.agg, src: r.src + '·DB집계' }; }
+        catch (e) { console.warn('[KJHub] voucher DB 집계 실패(0004 SQL 미실행?) → 전체 원본 방식:', e.message); }
+      }
       const cached = force ? null : await cacheGet(k);
       if (cached && v && cached.ver === v.ver && typeof cached.text === 'string') return { k, text: cached.text, src: '캐시' };
       try {
@@ -359,6 +396,10 @@ export async function loadKeys(keys, force) {
       const rows = t.rows || JSON.parse(t.text);
       console.log('[KJHub] 파싱 ' + t.k + ' ' + Math.round(performance.now() - tp) + 'ms, ' + Math.round((t.text || '').length / 1024) + 'KB');
       KJHub.data[t.k] = Array.isArray(rows) ? rows : [];
+      if (t.k === 'voucher') { // DB 집계가 함께 왔으면 보관, 아니면(예전 방식) 집계 없음 → 화면 코드가 원본으로 계산
+        try { KJHub.agg.voucher = t.agg ? JSON.parse(t.agg) : null; } catch (e) { KJHub.agg.voucher = null; }
+        if (KJHub.agg.voucher) console.log('[KJHub] voucher DB 집계 ' + KJHub.agg.voucher.length + '행 · 원본 ' + KJHub.data[t.k].length + '건(' + voucherRange().from + '~)');
+      }
       setMeta(t.k, 'ready', KJHub.data[t.k].length.toLocaleString('ko-KR') + '건 · ' + t.src);
       console.log('[KJHub] ' + t.k + ' ' + KJHub.data[t.k].length + '건 (' + t.src + ')');
     } catch (e) { console.error('[KJHub] ' + t.k + ' 로딩 실패', e); setMeta(t.k, 'error', e.message || String(e)); }
@@ -401,4 +442,5 @@ export async function loadCloseMonth() {
   const v = typeof data?.value === 'string' ? data.value : '';
   if (v) KJHub.setCloseMonth(v, { force: true });
   else { try { window.dispatchEvent(new CustomEvent('kjhub:closemonth', { detail: { month: KJHub.closeMonth() } })); } catch (e) {} }
+  if (_cmResolve) { _cmResolve(); _cmResolve = null; }
 }

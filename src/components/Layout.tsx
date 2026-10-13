@@ -27,6 +27,7 @@ export const SCREENS: { group: string; items: { path: string; title: string; adm
     { path: '/settings/employees', title: '사원 관리', admin: true },
     { path: '/settings/upload', title: '데이터 업로드', admin: true },
     { path: '/settings/history', title: '변경 이력 · 복구', admin: true },
+    { path: '/settings/verify', title: '집계 검증', admin: true },
   ]},
 ];
 
