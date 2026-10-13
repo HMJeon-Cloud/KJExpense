@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { ymLabel, useUI } from './ui';
 import { supabase } from '../lib/supabase';
-import LegacyHost from '../legacy/LegacyHost';
+import LegacyHost, { DataStatus } from '../legacy/LegacyHost';
 
 // 화면 레지스트리 — 3단계에서 기존 화면을 옮기며 채웁니다.
 export const SCREENS: { group: string; items: { path: string; title: string; admin?: boolean; privileged?: boolean }[] }[] = [
@@ -59,6 +59,7 @@ export default function Layout() {
           })}
         </nav>
         <span className="sp" />
+        <DataStatus />
         <span className="user">
           <span className="avatar">{employee?.name?.slice(0, 1) ?? '?'}</span>
           <span className="who">{employee?.name} · {employee?.dept} {employee?.grade}</span>
