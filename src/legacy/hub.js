@@ -250,6 +250,13 @@ KJHub.showScreen = function (id, opts) {
   if (!o.fromRouter && navHook) navHook(id);
 };
 KJHub.activeScreen = () => activeScreen;
+// 설정(지원 내역 등)이 바뀌었을 때 모듈을 다시 계산 — 보이는 화면이면 바로(합쳐서 1회), 아니면 그 화면을 열 때
+const refreshTimers = Object.create(null);
+KJHub.refreshModule = function (m, why) {
+  if (moduleOfScreen(activeScreen) !== m) { dirty[m] = true; return; }
+  clearTimeout(refreshTimers[m]);
+  refreshTimers[m] = setTimeout(() => runModule(m, why || '설정 변경', 'kjhub:results'), 300);
+};
 
 // ── 사용자 ─────────────────────────────────────────────
 // 신 권한 모델(employees.screen_depts: {경로: [부서]}) → 구 규칙([{screens:[제목], depts}])

@@ -36,35 +36,62 @@ export default function init() {
     for (const k in row) { const n = nrm(k); for (const c of cands) if (n.indexOf(nrm(c)) >= 0) return row[k]; }
     return '';
   };
-  function deptList() {
-    const out = [], seen = Object.create(null);
-    deptRows().forEach(r => {
+  // ★ 원본 배열이 바뀔 때만 다시 만드는 색인 (매 호출마다 전체 행을 훑던 것을 1회로)
+  let _dIdxSrc = null, _dIdxHead = null, _dIdx = null;
+  function deptIdx() {
+    const dr = deptRows(), hr = headRows();
+    if (_dIdx && _dIdxSrc === dr && (dr.length || _dIdxHead === hr)) return _dIdx;
+    _dIdxSrc = dr; _dIdxHead = hr;
+    const list = [], seen = Object.create(null), bus = [], seenB = Object.create(null), byBU = Object.create(null);
+    dr.forEach(r => {
       const d = String(pick(r, ['DeptName', '부서명', '부서'])).trim();
-      if (d && !seen[d]) { seen[d] = 1; out.push(d); }
+      const b = String(pick(r, ['BizUnitName', '사업단위명', '사업단위'])).trim();
+      if (d && !seen[d]) { seen[d] = 1; list.push(d); }
+      if (b && !seenB[b]) { seenB[b] = 1; bus.push(b); }
+      if (d && b) { const a = byBU[b] || (byBU[b] = []); if (a.indexOf(d) < 0) a.push(d); }
     });
-    if (!out.length) headRows().forEach(r => {
+    if (!list.length) hr.forEach(r => {
       const d = String(pick(r, ['DeptName', '부서명', '부서'])).trim();
-      if (d && !seen[d]) { seen[d] = 1; out.push(d); }
+      if (d && !seen[d]) { seen[d] = 1; list.push(d); }
     });
-    return out.sort((a, b) => a.localeCompare(b, 'ko'));
+    const ko = (a, b) => a.localeCompare(b, 'ko');
+    list.sort(ko); bus.sort(ko); for (const b in byBU) byBU[b].sort(ko);
+    _dIdx = { list: list, bus: bus, byBU: byBU };
+    return _dIdx;
   }
+  function deptList() { return deptIdx().list.slice(); }
   // 부서별 인원 (선택 기준월 기준, 없으면 이전 최근 월)
   //   월/부서별 인원 데이터 컬럼: DeptName / WorkDate(년월) / EmpCnt(부서인원)
   //   기준월 이하에서 가장 최근 월의 인원을 사용
-  function headcountOf(dept) {
-    const want = nrm(dept);
-    let best = 0, bestM = -1, anyM = -1, any = 0;
-    headRows().forEach(r => {
+  let _hIdxSrc = null, _hIdx = null;
+  function headIdx() {
+    const hr = headRows();
+    if (_hIdx && _hIdxSrc === hr) return _hIdx;
+    _hIdxSrc = hr;
+    const m = new Map(); // nrm(부서) → { undated, list:[[월idx, 인원]] (오름차순) }
+    hr.forEach(r => {
       const d = nrm(r['DeptName'] || r['부서명'] || r['부서'] || '');
-      if (d !== want) return;
-      const m = String(r['WorkDate'] || r['기준월'] || r['월'] || '').replace(/[^0-9]/g, '').slice(0, 6);
+      if (!d) return;
+      const e = m.get(d) || (m.set(d, { undated: 0, list: [] }), m.get(d));
+      const ym = String(r['WorkDate'] || r['기준월'] || r['월'] || '').replace(/[^0-9]/g, '').slice(0, 6);
       const n = Number(String(r['EmpCnt'] == null ? '' : r['EmpCnt']).replace(/[^0-9.\-]/g, '')) || 0;
-      if (m.length !== 6) { if (!best) best = n; return; }
-      const mi = mIdx(m);
-      if (mi > anyM) { anyM = mi; any = n; }                       // 전체 중 최신
-      if (mi <= mIdx(selMonth) && mi > bestM) { bestM = mi; best = n; } // 기준월 이하 최신
+      if (ym.length !== 6) { if (!e.undated) e.undated = n; return; }
+      e.list.push([mIdx(ym), n]);
     });
-    return best || (bestM < 0 ? any : 0) || 0;
+    m.forEach(e => e.list.sort((a, b) => a[0] - b[0]));
+    _hIdx = m;
+    return m;
+  }
+  //   기준월(ym, 없으면 선택 기준월) 이하에서 가장 최근 월의 인원 — 없으면 전체 중 최신
+  function headcountOf(dept, ym) {
+    const e = headIdx().get(nrm(dept));
+    if (!e) return 0;
+    const lim = mIdx(String(ym || selMonth));
+    let best = null;
+    for (let i = e.list.length - 1; i >= 0; i--) { if (e.list[i][0] <= lim) { best = e.list[i]; break; } }
+    if (best) return best[1] || 0;
+    if (e.undated) return e.undated;
+    return e.list.length ? (e.list[e.list.length - 1][1] || 0) : 0;
   }
   const ALL = '전체';
   function targetsOf(row) {
@@ -126,23 +153,8 @@ export default function init() {
   function markDirty() { dirty = true; const b = $s('spDirtyBadge'); if (b) b.classList.remove('hidden'); }
 
   // ── 사업단위/부서 매핑 ──
-  function buList() {
-    const out = [], seen = Object.create(null);
-    deptRows().forEach(r => {
-      const b = String(pick(r, ['BizUnitName', '사업단위명', '사업단위'])).trim();
-      if (b && !seen[b]) { seen[b] = 1; out.push(b); }
-    });
-    return out.sort((a, b) => a.localeCompare(b, 'ko'));
-  }
-  function deptsOfBU(bu) {
-    const out = [];
-    deptRows().forEach(r => {
-      const b = String(pick(r, ['BizUnitName', '사업단위명', '사업단위'])).trim();
-      const d = String(pick(r, ['DeptName', '부서명', '부서'])).trim();
-      if (d && b === bu && out.indexOf(d) < 0) out.push(d);
-    });
-    return out.sort((a, b) => a.localeCompare(b, 'ko'));
-  }
+  function buList() { return deptIdx().bus.slice(); }
+  function deptsOfBU(bu) { return (deptIdx().byBU[String(bu || '').trim()] || []).slice(); }
   // 업무 하나의 대상 부서 목록 (전체 / 사업단위 / 부서)
   function taskDepts(t) {
     let ds;
@@ -153,20 +165,20 @@ export default function init() {
     return ds.filter(d => ex.indexOf(d) < 0);
   }
   // 부서별 배분액 산출
-  function taskShares(t) {
+  function taskShares(t, ym) {
     const ds = taskDepts(t).sort((a, b) => a.localeCompare(b, 'ko'));
     const amt = Number(t.amount) || 0;
     if (t.split === 'direct') return ds.map(d => ({ dept: d, amount: Number((t.detail || {})[d]) || 0 }));
     if (t.split === 'head') {
-      const tot = ds.reduce((s2, d) => s2 + headcountOf(d), 0);
-      return ds.map(d => ({ dept: d, amount: tot > 0 ? Math.round(amt * headcountOf(d) / tot) : 0 }));
+      const tot = ds.reduce((s2, d) => s2 + headcountOf(d, ym), 0);
+      return ds.map(d => ({ dept: d, amount: tot > 0 ? Math.round(amt * headcountOf(d, ym) / tot) : 0 }));
     }
     if (t.split === 'dept') { // 부서별 균등 배분
       const n = ds.length || 1;
       return ds.map(d => ({ dept: d, amount: Math.round(amt / n) }));
     }
     // 인원별 단가 (금액 × 인원수)
-    return ds.map(d => ({ dept: d, amount: amt * headcountOf(d) }));
+    return ds.map(d => ({ dept: d, amount: amt * headcountOf(d, ym) }));
   }
   const taskTotal = t => taskShares(t).reduce((s2, x) => s2 + x.amount, 0);
 
@@ -203,6 +215,8 @@ export default function init() {
     return a.some(x => nrm(x) === nrm(d));
   }
   function render() {
+    // 새 화면(React)이 그리는 화면이면 숨겨진 기존 화면은 그리지 않음 (계산 낭비 방지)
+    if (window.KJHub && window.KJHub.isReactScreen && window.KJHub.isReactScreen('support')) return;
     const body = $s('spBody'); if (!body) return;
     const depts = deptList(), bus = buList();
     const allow = allowedDepts();
@@ -583,21 +597,33 @@ export default function init() {
   // ── 외부 공개: 부서별 지원 순액 (수익 합산용) ──
   //   지원 부서: +총액(지원비 수취) / 지원 받는 부서: −배분액(지원비 부담)
   // 월별 집계 캐시 — 부서마다 전체를 다시 훑지 않도록 (월 1회 계산 후 조회)
-  let netCache = Object.create(null), netCacheKey = '';
+  // ★ 월별 집계 캐시 — 설정·부서·인원 데이터가 바뀌면 자동으로 무효화
+  //   (이전에는 인원 데이터가 나중에 도착해도 캐시가 그대로 남아 화면마다 지원 금액이 달라질 수 있었음)
+  let netCache = Object.create(null), netCacheKey = '', _dataVer = 0, _verD = null, _verH = null;
+  function dataVer() { const dr = deptRows(), hr = headRows(); if (dr !== _verD || hr !== _verH) { _verD = dr; _verH = hr; _dataVer++; } return _dataVer; }
   function monthIndex(ym) {
-    const key = JSON.stringify(cfg.byMonth ? Object.keys(cfg.byMonth) : []) + '|' + (cfg.__v || 0);
+    const key = JSON.stringify(cfg.byMonth ? Object.keys(cfg.byMonth) : []) + '|' + (cfg.__v || 0) + '|' + dataVer();
     if (netCacheKey !== key) { netCache = Object.create(null); netCacheKey = key; }
     if (netCache[ym]) return netCache[ym];
-    const give = Object.create(null), recv = Object.create(null);
+    const give = Object.create(null), recv = Object.create(null), details = Object.create(null);
     (ratiosForMonth(ym) || []).forEach(g => {
       (g.tasks || []).forEach(t => {
-        const sh = taskShares(t);
+        const sh = taskShares(t, ym);
         let tot = 0;
         sh.forEach(x => { tot += x.amount; recv[x.dept] = (recv[x.dept] || 0) + x.amount; });
         if (g.dept) give[g.dept] = (give[g.dept] || 0) + tot;
+        // 받는 부서별 상세 (부서별 지원 내역 화면용) — 같은 계산에서 함께 만듦
+        const byD = Object.create(null);
+        sh.forEach(x => { const k = nrm(x.dept); byD[k] = (byD[k] || 0) + x.amount; });
+        const targetCount = sh.length;
+        for (const k in byD) {
+          if (!byD[k]) continue;
+          (details[k] = details[k] || []).push({ from: g.dept || '(미지정)', task: t.task || '(미지정)', desc: t.desc || '', split: t.split || 'unit', scope: t.scope || 'all', targetCount: targetCount, total: tot, amount: byD[k] });
+        }
       });
     });
-    netCache[ym] = { give: give, recv: recv };
+    for (const k in details) details[k].sort((a, b) => String(a.from).localeCompare(String(b.from), 'ko') || String(a.task).localeCompare(String(b.task), 'ko'));
+    netCache[ym] = { give: give, recv: recv, details: details };
     return netCache[ym];
   }
   const bumpCache = () => { cfg.__v = (cfg.__v || 0) + 1; netCache = Object.create(null); netCacheKey = ''; };
@@ -608,30 +634,12 @@ export default function init() {
     // 지원받은 금액(부담) — 비용으로 계상
     recvOf: function (dept, ym) { return monthIndex(String(ym || selMonth)).recv[dept] || 0; },
     netOf: function (dept, ym) { return this.giveOf(dept, ym) - this.recvOf(dept, ym); },
-    // 받는 부서 기준 상세 — [부서별 지원 내역] 화면용
+    // 받는 부서 기준 상세 — [부서별 지원 내역] 화면용 (월 1회 계산 결과를 조회만)
     detailsFor: function (dept, ym) {
-      const want = nrm(dept);
-      const out = [];
-      (ratiosForMonth(String(ym || selMonth)) || []).forEach(g => {
-        (g.tasks || []).forEach(t => {
-          const hit = taskShares(t).filter(x => nrm(x.dept) === want);
-          if (!hit.length) return;
-          const amt = hit.reduce((a, x) => a + x.amount, 0);
-          if (!amt) return;
-          out.push({
-            from: g.dept || '(미지정)',
-            task: t.task || '(미지정)',
-            desc: t.desc || '',
-            split: t.split || 'unit',
-            scope: t.scope || 'all',
-            targetCount: taskDepts(t).length,
-            total: taskShares(t).reduce((a, x) => a + x.amount, 0),
-            amount: amt
-          });
-        });
-      });
-      return out.sort((a, b) => String(a.from).localeCompare(String(b.from), 'ko') || String(a.task).localeCompare(String(b.task), 'ko'));
+      return (monthIndex(String(ym || selMonth)).details[nrm(dept)] || []).slice();
     },
+    // 월 전체 합계 (부서별 지원 내역 추이용)
+    totalOf: function (ym) { const ix = monthIndex(String(ym || selMonth)); let t = 0; for (const d in ix.recv) t += ix.recv[d]; return t; },
     // 저장된 기준월 목록 (승계 기준월 선택용)
     monthsOf: function () { return Object.keys((cfg && cfg.byMonth) || {}).sort(); },
     deptsOf: function (ym) {

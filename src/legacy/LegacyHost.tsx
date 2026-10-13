@@ -42,6 +42,7 @@ function bootOnce(container: HTMLElement) {
   const lucideShim = { ...lucide, createIcons: (o?: object) => lucide.createIcons({ icons: lucide.icons, ...(o || {}) }) };
   (window as unknown as { lucide: unknown }).lucide = lucideShim;
   installGsShim();
+  (KJHub as unknown as { isReactScreen: (id: string) => boolean }).isReactScreen = (id: string) => REACT_SCREENS.has(id);
   container.innerHTML = sectionsHtml;
   // 기존 화면 모듈 초기화 (DOM 주입 후)
   const mods: [string, () => void][] = [['deptCost', initDeptCost], ['matInput', initMatInput], ['profit', initProfit], ['trade', initTrade], ['mats', initMats], ['support', initSupport], ['deptSupport', initDeptSupport], ['lotStock', initLotStock]];

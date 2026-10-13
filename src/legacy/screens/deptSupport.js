@@ -72,6 +72,8 @@ export default function init() {
   }
 
   function render() {
+    // 새 화면(React)이 그리는 화면이면 숨겨진 기존 화면은 그리지 않음 (계산 낭비 방지)
+    if (window.KJHub && window.KJHub.isReactScreen && window.KJHub.isReactScreen('dept-support')) return;
     const body = $d('dsBody'), empty = $d('dsEmpty'); if (!body || !empty) return;
     const sp = window.__kjSupport;
     const mine = targetDepts();

@@ -89,6 +89,8 @@ export default function init() {
   }
 
   function render() {
+    // 새 화면(React)이 그리는 화면이면 숨겨진 기존 화면은 그리지 않음 (계산 낭비 방지)
+    if (window.KJHub && window.KJHub.isReactScreen && window.KJHub.isReactScreen('lot-stock')) return;
     const body = $l('lsBody'), empty = $l('lsEmpty');
     if (!body || !empty) return;
     const src = (hub().data && hub().data.stock) || null;

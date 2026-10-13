@@ -34,6 +34,8 @@ export default function init() {
   }
 
   function render() {
+    // 새 화면(React)이 그리는 화면이면 숨겨진 기존 화면은 그리지 않음 (계산 낭비 방지)
+    if (window.KJHub && window.KJHub.isReactScreen && window.KJHub.isReactScreen('mat-input')) return;
     const wrap = $m('miTableWrap'), empty = $m('miEmpty'), ctxBox = $m('miContext'), cnt = $m('miCount');
     if (!wrap || !empty) return;
     if (ctxBox) {

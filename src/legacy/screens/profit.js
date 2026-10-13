@@ -1262,7 +1262,8 @@ export default function init() {
     });
     applyCloseMonthTo('alBaseMonth', render); // 기준월 기본값 = 마감월
     window.addEventListener('kjhub:results', render);
-    window.addEventListener('kjsupport:ready', render);
+    // 지원 내역 설정이 (늦게) 도착하거나 바뀌면 국전·부서별 화면 모두 다시 계산 — 이전에는 국전 화면이 갱신되지 않아 금액이 어긋났음
+    window.addEventListener('kjsupport:ready', () => { if (window.KJHub && window.KJHub.refreshModule) window.KJHub.refreshModule('profit', '지원 설정'); else render(); });
     window.addEventListener('kjhub:closemonth', e => { // 마감월 변경 → 기준월 동기화
       alSelMonth = (e.detail && e.detail.month) || alSelMonth;
       const sm = $('alRatioMonth');
