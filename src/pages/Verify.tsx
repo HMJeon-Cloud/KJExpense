@@ -80,7 +80,7 @@ export default function Verify() {
   const [lot, setLot] = useState<{ js: number; sql: number; bad: number; missing: number; extra: number; diffs: LotDiff[]; byBU: Diff[]; byDept: Diff[]; ms: number; dbMonthly: { byBU: Record<string, Record<string, number>>; byDept: Record<string, Record<string, number>> }; jsMonthly: { byBU?: Record<string, Record<string, number>>; byDept?: Record<string, Record<string, number>> } } | null>(null);
   const [lotBusy, setLotBusy] = useState(false);
   const [dbMonths, setDbMonths] = useState<{ ym: string; cnt: number }[] | null>(null);
-  useEffect(() => { supabase.rpc('voucher_months').then(({ data, error }) => { if (!error && data) setDbMonths((data as { ym: string; cnt: number }[]).map(r => ({ ym: r.ym, cnt: Number(r.cnt) }))); }); }, [tick]);
+  useEffect(() => { supabase.rpc('voucher_months').then(({ data, error }) => { if (!error && data) setDbMonths((data as { ym: string; cnt: number }[]).map(r => ({ ym: r.ym, cnt: Number(r.cnt) }))); }); }, []); // 한 번만 (매 갱신마다 부르면 서버에 부담)
 
   // ① 같은 범위(불러온 원본 월)에서 세 방식 비교
   const win = useMemo(() => {
