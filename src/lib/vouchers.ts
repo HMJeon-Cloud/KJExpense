@@ -5,10 +5,24 @@ export type Voucher = { date: string; ym: string; dept: string; acc: string; des
 const pick = (r: VRow, ...keys: string[]) => { for (const k of keys) { const v = r[k]; if (v != null && v !== '') return v; } return ''; };
 const num = (v: unknown) => (parseFloat(String(v ?? '').replace(/,/g, '')) || 0);
 
-export function parseVouchers(rows: VRow[] | null | undefined): Voucher[] {
+/** 비용 전표 규칙 — 국전·부서별 화면의 비용 합계(DB voucher_agg, profit.js aggregate)와 같은 기준
+ *  제외: 부서 없음 · 계정에 '집합' · 적요에 '제조원가대체/손익대체/원가대체' · 부서에 '원가계산'
+ *  포함: 계정에 '(판)' 또는 '(제)', 또는 비용구분에 '판관'/'제조' */
+export function isCostVoucher(r: VRow): boolean {
+  const acc = String(pick(r, '계정과목', 'AccName'));
+  const desc = String(pick(r, '적요', 'Summary'));
+  const dept = String(pick(r, '코스트센터', 'CostCCtrName') || r['부서'] || '').trim();
+  const ct = String(pick(r, '비용구분', 'UMCostTypeName'));
+  if (!dept) return false;
+  if (acc.includes('집합') || desc.includes('제조원가대체') || desc.includes('손익대체') || desc.includes('원가대체') || dept.includes('원가계산')) return false;
+  return acc.includes('(판)') || acc.includes('(제)') || ct.includes('판관') || ct.includes('제조');
+}
+
+export function parseVouchers(rows: VRow[] | null | undefined, opts?: { all?: boolean }): Voucher[] {
   if (!Array.isArray(rows)) return [];
   const out: Voucher[] = [];
   for (const r of rows) {
+    if (!opts?.all && !isCostVoucher(r)) continue;
     const date = String(pick(r, '회계일', 'AccDate', '전표일자', 'Date', 'DATE')).replace(/[^0-9]/g, '').slice(0, 8);
     const amt = num(pick(r, '차변금액', 'DrAmt', 'DRAMT')) - num(pick(r, '대변금액', 'CrAmt', 'CRAMT'));
     out.push({

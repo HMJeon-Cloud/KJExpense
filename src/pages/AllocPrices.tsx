@@ -2,6 +2,7 @@
 //   위: 이 달 설정 현황(입력/미입력, 참고가 대비)  가운데: 일괄 도구  아래: 표(Enter로 다음 칸). 값·저장은 기존 모듈이 수행.
 import { useMemo, useState } from 'react';
 import { fmt, useUI } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import { ymLabel } from '../lib/legacyData';
 import { MonthPick, SaveBar, NumCell, useCfgTick } from '../components/settingsUi';
@@ -96,7 +97,7 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
 
         <div className="verdict">
           <div>
-            <div className="l">{ymLabel(month)} 입력 현황</div>
+            <div className="l">{ymLabel(month)} 입력 현황<HelpDot id={isItems ? 'set.items' : 'set.mats'} /></div>
             <div className="big" style={{ color: unsetCnt ? '#9a6f00' : '#2c7f2c' }}>{setCnt}<span style={{ fontSize: 16, color: 'var(--fg-3)', fontWeight: 600 }}> / {total}{isItems ? '품목' : '자재'} 입력됨</span></div>
             <div className="prog"><i style={{ width: (total ? setCnt / total * 100 : 0) + '%', background: '#3aa63a' }} /><i style={{ width: (total ? unsetCnt / total * 100 : 0) + '%', background: '#f5b400' }} /></div>
             <div className="facts">
@@ -107,7 +108,7 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
             {bySrc > 0 && <div className="help" style={{ marginTop: 8, color: '#9a6f00' }}>참고가에 (년월) 표시는 직전 3개월 거래가 없어 이전 금액을 승계한 것입니다.</div>}
           </div>
           <div>
-            <div className="l">일괄 채우기 <span>참고 판매가 × (1 + 비율%) 로 값을 채우고 바로 저장합니다</span></div>
+            <div className="l">일괄 채우기<HelpDot id={isItems ? 'set.items' : 'set.mats'} /> <span>참고 판매가 × (1 + 비율%) 로 값을 채우고 바로 저장합니다</span></div>
             <div className="tools" style={{ marginTop: 8 }}>
               <div className="tr">
                 <span>비율(%)</span><span className="help">구매</span><NumCell value={pct.buy} onCommit={v => setPct('buy', v ?? 0)} width={70} />

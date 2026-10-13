@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL, C } from '../components/charts';
 
 type Model = {
@@ -68,7 +69,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
     const s2 = model.prev ? `전월보다 수익은 ${rMargin == null ? '비교 불가' : (rMargin >= 0 ? '+' : '') + rMargin + '%'}, 비용은 ${rCost == null ? '비교 불가' : (rCost >= 0 ? '+' : '') + rCost + '%'} 입니다.` : '';
     const s3 = top ? `가장 큰 변화는 ${top.d} ${top.a} ${top.up ? '증가' : '감소'}(${top.up ? '+' : '-'}${kor(top.v)})입니다.` : '';
     const rows = model.hqGroups.map(g => {
-      const mg = g.margin.map((v, i) => v + (g.supAlloc[i] || 0));
+      const mg = g.margin; // ※ 본부 수익(hqAllocSeries)은 이미 지원 수취액을 포함 — 다시 더하지 않음
       const emp = model.headcount.find(h => h.hq === g.hq)?.emp ?? 0;
       return { key: g.hq, name: g.hq, emp, margin: mg, cost: g.cost, depts: model.deptRows.filter(x => x.hq === g.hq) };
     });
@@ -152,7 +153,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 1. 결론 */}
           <section className="verdict">
             <div className="big" style={{ borderTop: `4px solid ${d.net >= 0 ? '#3aa63a' : '#d93c3c'}` }}>
-              <span className="lbl">{ymL(model.cur)} 순수익 (수익 − 비용)</span>
+              <span className="lbl">{ymL(model.cur)} 순수익 (수익 − 비용)<HelpDot id={variant === '-real' ? 'bu-real.verdict' : 'bu.verdict'} /></span>
               <span className="bignum" style={{ color: d.net >= 0 ? '#2c7f2c' : '#b32b2b' }}>{d.net >= 0 ? '+' : '−'}{kor(Math.abs(d.net))}</span>
               <span className="help num" style={{ textAlign: 'left' }}>{fmt(d.net)}원</span>
               <span className="ratio">비용/수익 <RatioBar ratio={d.r} /></span>
@@ -173,12 +174,12 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 2. 추이 + 주목할 변화 */}
           <div className="duo">
             <section className="sec">
-              <h2>월별 순수익 추이</h2>
+              <h2>월별 순수익 추이<HelpDot id={variant === '-real' ? 'bu-real.verdict' : 'bu.trend'} /></h2>
               <p className="lead">막대는 그 달의 순수익(초록 남음, 빨강 초과). 실선은 수익, 점선은 비용입니다.</p>
-              <NetTrend months={model.months} margin={model.series.margin.map((v, i) => v + (model.series.supAlloc[i] || 0))} cost={model.series.cost} height={300} />
+              <NetTrend months={model.months} margin={model.series.margin} cost={model.series.cost} height={300} />
             </section>
             <section className="sec">
-              <h2>이번 달 주목할 변화</h2>
+              <h2>이번 달 주목할 변화<HelpDot id="bu.alerts" /></h2>
               <p className="lead">최근 평균보다 크게 늘거나 줄어든 부서 계정. 클릭하면 전표를 봅니다.</p>
               <div className="notable">
                 {d.notable.length === 0 && <span className="help">눈에 띄는 변화가 없습니다.</span>}
@@ -195,7 +196,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 3. 스코어보드 */}
           <section className="sec">
-            <h2>{model.deptLevel ? '부서별' : '본부별'} 현황</h2>
+            <h2>{model.deptLevel ? '부서별' : '본부별'} 현황<HelpDot id={variant === '-real' ? 'bu-real.scoreboard' : 'bu.scoreboard'} /></h2>
             <p className="lead" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>{ymL(model.cur)} 기준. 비용/수익은 100%를 넘으면 수익보다 비용이 많다는 뜻입니다.</span>{!model.deptLevel && <span className="seg" style={{ marginLeft: 'auto' }}><button className={!allOpen ? 'on' : ''} onClick={() => { setAllOpen(false); setOpen({}); }}>본부만</button><button className={allOpen ? 'on' : ''} onClick={() => { setAllOpen(true); setOpen({}); }}>부서까지</button></span>}</p>
             <div className="tbl-wrap">
               <table className="score">
@@ -234,7 +235,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 4. 수익 구성 */}
           <section className="sec">
-            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 수익은 어디서 났나</h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
+            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 수익은 어디서 났나<HelpDot id="bu.revenue" /></h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
             <p className="lead">{model.realized ? '사업장별 실현 수익과 부서별 수익입니다.' : '왼쪽은 구매/판매 이윤이 어느 팀 기준으로 발생했는지, 오른쪽은 배분 비율을 거쳐 부서에 돌아간 수익입니다.'}{model.revenue?.supportCur ? ` 지원 내역으로 받은 수익 ${kor(model.revenue.supportCur)}이 부서 수익에 포함돼 있습니다.` : ''}</p>
             {showRev && model.revenue && (
               <div className="costgrid">
@@ -282,7 +283,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 5. 비용 구성 */}
           <section className="sec">
-            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 비용은 어디서 나갔나</h2><button className="btn sm ghost" onClick={() => setShowCost(s => !s)}>{showCost ? '접기' : '펼치기'}</button></div>
+            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 비용은 어디서 나갔나<HelpDot id="bu.cost" /></h2><button className="btn sm ghost" onClick={() => setShowCost(s => !s)}>{showCost ? '접기' : '펼치기'}</button></div>
             <p className="lead">왼쪽은 {model.deptLevel ? '부서' : '본부'}별 구성과 주요 계정, 오른쪽은 비용이 큰 부서 10곳입니다. 항목을 클릭하면 전표를 봅니다.</p>
             {showCost && (
               <div className="costgrid">

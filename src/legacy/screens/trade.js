@@ -672,6 +672,11 @@ export default function init() {
     d: "m16.71 13.88.7.71-2.82 2.82"
   }));
 
+  // 도움말 (?) — 새 화면의 도움말 창을 엽니다
+  const HelpQ = ({ id }) => React.createElement("button", {
+    type: "button", className: "helpdot", title: "이 값은 어떻게 계산되나요?",
+    onClick: e => { e.stopPropagation(); if (window.KJHub && window.KJHub.openHelp) window.KJHub.openHelp(id); }
+  }, "?");
   // ============================================================================
   // 트리 노드 생성 헬퍼 함수
   // ============================================================================
@@ -2064,7 +2069,7 @@ export default function init() {
       className: "bg-white border border-orange-100 rounded-lg shadow-sm"
     }, /*#__PURE__*/React.createElement("h4", {
       className: "bg-orange-50/50 px-3 py-1.5 border-b border-orange-100 text-orange-800 font-semibold flex items-center gap-2 text-xs"
-    }, "부대비용 상세"), /*#__PURE__*/React.createElement("div", {
+    }, "부대비용 상세", React.createElement(HelpQ, { id: "trade.lotExpense" })), /*#__PURE__*/React.createElement("div", {
       className: "p-2"
     }, /*#__PURE__*/React.createElement("div", {
       className: "overflow-x-auto rounded border border-slate-200 custom-scrollbar"
@@ -2104,7 +2109,7 @@ export default function init() {
       className: "bg-white border border-indigo-100 rounded-lg shadow-sm overflow-hidden w-full"
     }, /*#__PURE__*/React.createElement("div", {
       className: "bg-indigo-50/60 px-3 py-1.5 border-b border-indigo-100 text-indigo-800 font-semibold text-xs flex items-center gap-2"
-    }, "비용 상세", /*#__PURE__*/React.createElement("span", {
+    }, "비용 상세", React.createElement(HelpQ, { id: "trade.lotDetail" }), /*#__PURE__*/React.createElement("span", {
       className: "font-normal text-[10px] text-indigo-400"
     }, "· 컬럼 헤더 클릭 시 정렬 (재클릭 시 오름/내림 전환)")), /*#__PURE__*/React.createElement("div", {
       className: "overflow-x-auto custom-scrollbar w-full pb-1"

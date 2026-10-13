@@ -2,6 +2,7 @@
 //   위: 이 달 결과 미리보기(부서별 받는 수익)  아래: 그룹 카드(비율 입력 · 금액 미리보기). 저장·검증은 기존 모듈이 수행.
 import { useMemo, useState } from 'react';
 import { fmt, useUI } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import { ymLabel } from '../lib/legacyData';
 import { MonthPick, SaveBar, NumCell, useCfgTick } from '../components/settingsUi';
@@ -83,7 +84,7 @@ export default function AllocGroups() {
 
         <div className="verdict">
           <div>
-            <div className="l">{ymLabel(month)} 배분되는 수익 합계 <span>(지금 입력한 비율 기준 미리보기)</span></div>
+            <div className="l">{ymLabel(month)} 배분되는 수익 합계<HelpDot id="set.alloc" /> <span>(지금 입력한 비율 기준 미리보기)</span></div>
             <div className="big">{kor(view.total)}</div>
             <div className="help" style={{ marginTop: 4 }}>{fmt(view.total)}원 · 받는 부서 {view.byDept.length}곳 · 그룹 {view.groups.filter(x => x.rows.length).length}/{view.groups.length}개 설정됨</div>
             {bad.length > 0 && <div className="help" style={{ marginTop: 8, color: 'var(--neg)', fontWeight: 600 }}>합계가 100%가 아닌 그룹 {bad.length}개: {bad.map(x => x.g.label).join(', ')} — 저장되지 않습니다.</div>}
@@ -91,7 +92,7 @@ export default function AllocGroups() {
             {b.updatedAt() && <div className="help" style={{ marginTop: 6 }}>마지막 저장 {new Date(b.updatedAt()!).toLocaleString('ko-KR')}{b.updatedBy() ? ` (${b.updatedBy()})` : ''}</div>}
           </div>
           <div>
-            <div className="l">부서별 받는 수익 <span>누르면 그 부서가 들어간 그룹만 강조</span></div>
+            <div className="l">부서별 받는 수익<HelpDot id="set.alloc" /> <span>누르면 그 부서가 들어간 그룹만 강조</span></div>
             <div className="rk">{view.byDept.map(([d, v, parts]) => <div key={d} className={'r' + (focusDept === d ? ' on' : '')} onClick={() => setFocusDept(focusDept === d ? '' : d)} title={parts.map(p => `${p.g} ${p.pct}% → ${fmt(p.amt)}`).join('\n')}><div><div className="nm">{d}<small>{parts.length}개 그룹 · {view.total ? Math.round(v / view.total * 100) : 0}%</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}
               {!view.byDept.length && <div className="empty">아직 설정된 비율이 없습니다. 아래 그룹 카드에서 부서를 추가하세요.</div>}</div>
           </div>

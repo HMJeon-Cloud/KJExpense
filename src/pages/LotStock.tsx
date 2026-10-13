@@ -2,6 +2,7 @@
 //   데이터 해석 규칙은 기존 모듈(legacy/screens/lotStock.js)과 동일합니다.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import { KJ, nrm, num, pick, d8, fmtD, today8, daysBetween, type Raw } from '../lib/legacyData';
 
@@ -100,14 +101,14 @@ export default function LotStock() {
           <>
             <div className="verdict">
               <div>
-                <div className="l">재고금액 합계</div>
+                <div className="l">재고금액 합계<HelpDot id="stock.verdict" /></div>
                 <div className="big">{kor(total)}</div>
                 <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · {fmt(rows.length)} LOT · 품목 {byItem.length}종 · 사업장 {byBiz.length}곳</div>
                 <div className="stack">{byBiz.map(([b, v], i) => <i key={b} title={`${b} ${fmt(v.amt)}원`} style={{ width: (total > 0 ? v.amt / total * 100 : 0) + '%', background: BIZ_COLORS[i % BIZ_COLORS.length] }} />)}</div>
                 <div className="lg">{byBiz.map(([b, v], i) => <span key={b} className={bizSel === b ? 'on' : ''} onClick={() => setBizSel(bizSel === b ? '' : b)}><i style={{ background: BIZ_COLORS[i % BIZ_COLORS.length] }} />{b} {kor(v.amt)} · {v.n}건</span>)}</div>
               </div>
               <div>
-                <div className="l">유효기간 점검 <span>오늘 {fmtD(t0)} 기준 · 누르면 해당 재고만</span></div>
+                <div className="l">유효기간 점검<HelpDot id="stock.expiry" /> <span>오늘 {fmtD(t0)} 기준 · 누르면 해당 재고만</span></div>
                 <div className="warn">
                   <div className="w" style={{ background: expired.length ? '#fdeaea' : 'var(--surface-2)' }} onClick={() => setExp(exp === '0' ? '' : '0')}><span>이미 만료 <b>{expired.length}</b> LOT</span><b className={expired.length ? 'exp' : ''}>{fmt(sum(expired))}원</b></div>
                   <div className="w" style={{ background: soon.length ? '#fff4d6' : 'var(--surface-2)' }} onClick={() => setExp(exp === '30' ? '' : '30')}><span>30일 이내 만료 <b>{soon.length}</b> LOT</span><b className={soon.length ? 'soon' : ''}>{fmt(sum(soon))}원</b></div>
@@ -116,7 +117,7 @@ export default function LotStock() {
                 <div className="help" style={{ marginTop: 8 }}>만료·임박 재고 합계 {kor(sum(expired) + sum(soon))} — 전체의 {total > 0 ? Math.round((sum(expired) + sum(soon)) / total * 1000) / 10 : 0}%</div>
               </div>
               <div>
-                <div className="l">품목별 재고 TOP 10 <span>누르면 그 품목만</span></div>
+                <div className="l">품목별 재고 TOP 10<HelpDot id="stock.items" /> <span>누르면 그 품목만</span></div>
                 <div className="rk" style={{ padding: '6px 0 0' }}>
                   {byItem.slice(0, 10).map(([k, v]) => <div key={k} className={'r' + (itemSel === k ? ' on' : '')} style={{ gridTemplateColumns: 'minmax(0,1fr) 100px' }} onClick={() => setItemSel(itemSel === k ? '' : k)}>
                     <div><div className="nm">{k}<span className="help" style={{ marginLeft: 6 }}>{fmtF(v.qty)}{v.unit} · {v.n}LOT</span></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxI * 100)) + '%' }} /></div></div>

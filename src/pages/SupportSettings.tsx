@@ -2,6 +2,7 @@
 //   위: 이 달 합계·받는 부서별 부담(미리보기)  아래: 지원 부서 카드 × 업무 행(기본 펼침). 저장은 기존 지원 모듈이 수행.
 import { useMemo, useState } from 'react';
 import { fmt, useUI } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import { ymLabel } from '../lib/legacyData';
 import { MonthPick, SaveBar, NumCell, useCfgTick } from '../components/settingsUi';
@@ -86,14 +87,14 @@ export default function SupportSettings() {
 
         <div className="verdict">
           <div>
-            <div className="l">{ymLabel(month)} 지원 금액 합계 <span className={own ? '' : ''} style={{ color: own ? '#2c7f2c' : '#9a6f00' }}>{own ? '· 이 달 설정' : src ? `· ${ymLabel(src)} 설정 승계 중` : '· 설정 없음'}</span></div>
+            <div className="l">{ymLabel(month)} 지원 금액 합계<HelpDot id="set.support" /> <span className={own ? '' : ''} style={{ color: own ? '#2c7f2c' : '#9a6f00' }}>{own ? '· 이 달 설정' : src ? `· ${ymLabel(src)} 설정 승계 중` : '· 설정 없음'}</span></div>
             <div className="big">{kor(view.total)}</div>
             <div className="help" style={{ marginTop: 4 }}>{fmt(view.total)}원 · 지원 부서 {draft.filter(g => g.dept).length}곳 · 업무 {view.tasks}건 · 받는 부서 {view.byRecv.length}곳</div>
             <div className="help" style={{ marginTop: 8 }}>인원수는 월/부서별 인원 데이터의 {ymLabel(month)} 이하 가장 최근 월 값을 씁니다.</div>
             <div className="help" style={{ marginTop: 4 }}>저장된 달: {b.savedMonths().map(ymLabel).join(', ') || '없음'}</div>
           </div>
           <div>
-            <div className="l">받는 부서별 부담액 <span>지금 입력값 기준 미리보기 · 누르면 그 부서가 포함된 업무만 강조</span></div>
+            <div className="l">받는 부서별 부담액<HelpDot id="set.support" /> <span>지금 입력값 기준 미리보기 · 누르면 그 부서가 포함된 업무만 강조</span></div>
             <div className="rk">{view.byRecv.map(([d, v, n]) => <div key={d} className={'r' + (focus === d ? ' on' : '')} onClick={() => setFocus(focus === d ? '' : d)}><div><div className="nm">{d}<small>{n}건 · {view.total ? Math.round(v / view.total * 100) : 0}% · 인원 {b.headcountOf(d)}</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxR * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}
               {!view.byRecv.length && <div className="empty">아직 지원 내역이 없습니다.</div>}</div>
           </div>

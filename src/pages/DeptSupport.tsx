@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import { KJ, nrm, pick, ymLabel, type Raw } from '../lib/legacyData';
 
@@ -82,17 +83,17 @@ export default function DeptSupport() {
           <>
             <div className="verdict">
               <div>
-                <div className="l">{ymLabel(ym)} 지원 부담액 합계</div>
+                <div className="l">{ymLabel(ym)} 지원 부담액 합계<HelpDot id="support.view" /></div>
                 <div className="big">{kor(total)}</div>
                 <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · 받는 부서 {byDept.length}곳 · 지원 {Object.values(detail).reduce((a, r) => a + r.length, 0)}건{prev != null && prev > 0 && <> · 전월 대비 <b style={{ color: total - prev > 0 ? 'var(--neg)' : '#2c7f2c' }}>{total - prev >= 0 ? '+' : ''}{Math.round((total - prev) / prev * 1000) / 10}%</b></>}</div>
                 <div className="mini">{trend.map(([m, v]) => <div key={m} className={'col' + (m === ym ? ' on' : '')} title={`${ymLabel(m)} · ${fmt(v)}원`} onClick={() => setYm(m)}><i style={{ height: Math.max(2, Math.round(v / tMax * 44)) }} /><small>{+m.slice(4)}월</small></div>)}</div>
               </div>
               <div>
-                <div className="l">받는 부서별 부담액 <span>누르면 그 부서만</span></div>
+                <div className="l">받는 부서별 부담액<HelpDot id="support.view" /> <span>누르면 그 부서만</span></div>
                 <div className="rk">{byDept.slice(0, 12).map(([d, v, n]) => <div key={d} className={'r' + (deptSel === d ? ' on' : '')} onClick={() => setDeptSel(deptSel === d ? '' : d)}><div><div className="nm">{d}<small>{hqOf[d]} · {n}건 · {total > 0 ? Math.round(v / total * 100) : 0}%</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}</div>
               </div>
               <div>
-                <div className="l">지원하는 부서별 <span>누르면 그 부서가 준 지원만</span></div>
+                <div className="l">지원하는 부서별<HelpDot id="support.view" /> <span>누르면 그 부서가 준 지원만</span></div>
                 <div className="rk">{byFrom.slice(0, 12).map(([f, v]) => <div key={f} className={'r' + (fromSel === f ? ' on' : '')} onClick={() => setFromSel(fromSel === f ? '' : f)}><div><div className="nm">{f}<small>업무 {v.tasks.size}개 · {v.n}건</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxF * 100)) + '%', background: '#1f6fe8' }} /></div></div><span className="n">{fmt(v.amt)}</span></div>)}</div>
               </div>
             </div>

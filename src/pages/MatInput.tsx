@@ -2,6 +2,7 @@
 //   결론(수익 합계·부서별) → 자재별 순위 → 투입 상세 표. 계산 규칙은 기존 모듈(legacy/screens/matInput.js)과 동일합니다.
 import { useEffect, useMemo, useState } from 'react';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import { KJ, nrm, num, pick, fmtD, type Raw } from '../lib/legacyData';
 
@@ -107,19 +108,19 @@ export default function MatInput() {
           <>
             <div className="verdict">
               <div>
-                <div className="l">자재 수익 합계 <span>(판매가(구매) − 입고금액) × 수량</span></div>
+                <div className="l">자재 수익 합계<HelpDot id="mat.verdict" /> <span>(판매가(구매) − 입고금액) × 수량</span></div>
                 <div className="big" style={{ color: total >= 0 ? '#2c7f2c' : '#b32b2b' }}>{kor(total)}</div>
                 <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · 자재 {byMat.length}종 · 투입 {fmt(rows.length)}건</div>
                 {unsetCnt > 0 && <div className="help" style={{ marginTop: 8, color: '#9a6f00' }}>판매가(구매)가 설정되지 않은 투입 {unsetCnt}건은 수익 0으로 계산됩니다 → 배분 비율 설정(원자재)에서 기준월 값을 저장하세요.</div>}
               </div>
               <div>
-                <div className="l">부서별 수익</div>
+                <div className="l">부서별 수익<HelpDot id="mat.verdict" /></div>
                 <div className="dl">{byDept.map(([d, v]) => <div key={d}><span className="help">{d}</span><b style={{ color: v >= 0 ? '#2c7f2c' : '#b32b2b' }}>{fmt(v)}</b></div>)}</div>
               </div>
             </div>
 
             <div className="card">
-              <div className="hd">자재별 수익 <span className="help" style={{ fontWeight: 400 }}>수익 큰 순 · 누르면 그 자재만</span></div>
+              <div className="hd">자재별 수익<HelpDot id="mat.byMat" /> <span className="help" style={{ fontWeight: 400 }}>수익 큰 순 · 누르면 그 자재만</span></div>
               <div className="rk">
                 <div className="r" style={{ cursor: 'default', color: 'var(--fg-3)', fontSize: 11.5 }}><span>자재</span><span className="n">건수</span><span className="n">수량</span><span className="n">입고금액</span><span className="n">수익</span></div>
                 {byMat.map(([k, v]) => <div key={k} className={'r' + (matSel === k ? ' on' : '')} onClick={() => setMatSel(matSel === k ? '' : k)}>
@@ -130,7 +131,7 @@ export default function MatInput() {
             </div>
 
             <div className="card">
-              <div className="hd">투입 상세 {matSel && <span className="chip on" style={{ marginLeft: 8 }}>{matSel} <span className="x" onClick={() => setMatSel('')}>×</span></span>}<span className="sp" /><span className="help">{fmt(shown.length)}건 · 열 제목을 누르면 정렬</span></div>
+              <div className="hd">투입 상세<HelpDot id="mat.table" /> {matSel && <span className="chip on" style={{ marginLeft: 8 }}>{matSel} <span className="x" onClick={() => setMatSel('')}>×</span></span>}<span className="sp" /><span className="help">{fmt(shown.length)}건 · 열 제목을 누르면 정렬</span></div>
               <div className="tbl-wrap"><table>
                 <thead><tr>{COLS.map(c => <th key={c.key} className={c.num ? 'n' : ''} style={{ width: c.w }} onClick={() => setSort(s => ({ k: c.key, d: s.k === c.key ? (s.d === 1 ? -1 : 1) : (c.num ? -1 : 1) }))}>{c.label}{sort.k === c.key ? (sort.d === 1 ? ' ▲' : ' ▼') : ''}</th>)}</tr></thead>
                 <tbody>{shown.map((r, i) => <tr key={i}>{COLS.map(c => { const v = r[c.key]; const cls = (c.num ? 'n ' : '') + (c.wide ? 'wide ' : '') + (c.key === 'profit' ? (r.profit < 0 ? 'neg' : 'pos') : c.key === 'sell' && !r.sell ? 'unset' : ''); return <td key={c.key} className={cls} title={c.wide ? String(v) : undefined}>{c.date ? fmtD(v) : c.num ? fmt(v as number) : (String(v) || '-')}</td>; })}</tr>)}</tbody>

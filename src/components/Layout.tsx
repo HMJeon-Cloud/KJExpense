@@ -3,6 +3,7 @@ import { useAuth } from '../lib/auth';
 import { ymLabel, useUI } from './ui';
 import { supabase } from '../lib/supabase';
 import LegacyHost, { DataStatus } from '../legacy/LegacyHost';
+import { HelpHost } from './Help';
 
 // 화면 레지스트리 — 3단계에서 기존 화면을 옮기며 채웁니다.
 export const SCREENS: { group: string; items: { path: string; title: string; admin?: boolean; privileged?: boolean }[] }[] = [
@@ -68,6 +69,7 @@ export default function Layout() {
       </header>
       <LegacyHost />
       <Outlet />
+      <HelpHost />
     </>
   );
 }

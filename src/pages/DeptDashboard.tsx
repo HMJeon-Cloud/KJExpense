@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL } from '../components/charts';
 import VoucherTable from '../components/VoucherTable';
 
@@ -137,7 +138,7 @@ export default function DeptDashboard() {
         <>
           <div className="verdict">
             <div>
-              <div className="l">{ymL(model.cur)} 순수익 (수익 − 비용){hq ? ` · ${hq}` : ''}</div>
+              <div className="l">{ymL(model.cur)} 순수익 (수익 − 비용){hq ? ` · ${hq}` : ''}<HelpDot id="dept.verdict" /></div>
               <div className="big" style={{ color: totals.m - totals.c >= 0 ? '#2c7f2c' : '#b32b2b' }}>{(totals.m - totals.c >= 0 ? '+' : '−') + kor(Math.abs(totals.m - totals.c))}</div>
               <div className="help" style={{ marginTop: 4 }}>{totals.m - totals.c >= 0 ? `수익 안에서 비용을 썼습니다. 비용은 수익의 ${ratio(totals.c, totals.m) ?? '-'}%.` : `비용이 수익보다 ${kor(totals.c - totals.m)} 많습니다. 비용은 수익의 ${ratio(totals.c, totals.m) ?? '-'}%.`}</div>
               <div style={{ marginTop: 10 }}><RatioBar ratio={ratio(totals.c, totals.m)} /></div>
@@ -149,7 +150,7 @@ export default function DeptDashboard() {
               </div>
             </div>
             <div>
-              <div className="l" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>부서별 순수익 한눈에 <span>오른쪽은 남김, 왼쪽은 초과 · 누르면 상세</span><span className="sp" />
+              <div className="l" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>부서별 순수익 한눈에<HelpDot id="dept.verdict" /> <span>오른쪽은 남김, 왼쪽은 초과 · 누르면 상세</span><span className="sp" />
                 <select id="al-hq" className="inp" style={{ padding: '3px 8px', fontSize: 12 }} value={hq} onChange={e => setHq(e.target.value)}><option value="">본부 전체</option>{hqs.map(h => <option key={h} value={h}>{h}</option>)}</select>
                 {sel && <button className="btn sm" onClick={() => setSel(null)}>부서 선택 해제 ({sel.size})</button>}
               </div>
@@ -163,7 +164,7 @@ export default function DeptDashboard() {
           </div>
 
           <section className="sec">
-            <h2>부서 현황</h2>
+            <h2>부서 현황<HelpDot id="dept.table" /></h2>
             <p className="lead">{ymL(model.cur)} 기준. 열 제목을 누르면 정렬되고, 부서를 누르면 아래에 상세가 펼쳐집니다.</p>
             <div className="tbl-wrap">
               <table className="score">
@@ -195,7 +196,7 @@ export default function DeptDashboard() {
           </section>
 
           <section className="sec">
-            <h2>배분의 원천</h2>
+            <h2>배분의 원천<HelpDot id="dept.source" /></h2>
             <p className="lead">{model.months.length}개월 동안 구매/판매 이윤이 어느 팀 기준으로 생겼는지입니다. 이 금액이 배분 비율에 따라 부서 수익이 됩니다.</p>
             <div className="chips">{model.groupSummary.filter(g => g.total !== 0).sort((a, b) => b.total - a.total).map(g => <span key={g.key} className="chip" style={{ borderLeft: `3px solid ${g.color}`, gap: 8 }}>{g.label}<b className="num">{kor(g.total)}</b>{g.manual && <span className="help">수동</span>}</span>)}</div>
             {model.updatedAt && <p className="help" style={{ marginTop: 8 }}>배분 설정 저장: {new Date(model.updatedAt).toLocaleString('ko-KR')}{model.updatedBy ? ` (${model.updatedBy})` : ''}</p>}
@@ -221,7 +222,7 @@ function DeptDetail({ x, model, onDrill }: { x: Dept & { r: number | null; curM:
   return (
     <div className="detail">
       <div className="head">
-        <h3>{x.d}</h3>
+        <h3>{x.d}<HelpDot id="dept.detail" /></h3>
         <span className="help">{x.hq}{x.empNow ? ` · 현재 인원 ${x.empNow}명` : ''}</span>
         <span className="chips">{x.groups.map(g => <span key={g.key} className="tag b">{g.label} {g.pct}%</span>)}{budget && <span className={'tag ' + budget.c}>{budget.t}</span>}</span>
         <span className="sp" />

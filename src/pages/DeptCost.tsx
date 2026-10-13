@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 import VoucherTable from '../components/VoucherTable';
 import { parseVouchers, type VRow } from '../lib/vouchers';
@@ -49,6 +50,16 @@ export default function DeptCost() {
   const deptMaster = useMemo(() => { const rows = KJ()?.data?.dept || []; const m: Record<string, string> = {}; rows.forEach(r => { const d = String(r['DeptName'] ?? r['DEPTNAME'] ?? '').trim(); const h = String(r['BizUnitName'] ?? r['BIZUNITNAME'] ?? '').trim(); if (d) m[d] = h; }); return m; }, [tick]); // eslint-disable-line
   const allowed = useMemo(() => { const l = KJ()?.screenDepts?.('부서별 비용'); return l == null ? null : new Set(l.map(s => s.replace(/\s+/g, '').toLowerCase())); }, [tick]); // eslint-disable-line
   const months = useMemo(() => (endYm ? monthsBack(endYm, span) : []), [endYm, span]);
+  // 최근 13개월보다 이전 달을 고르면 그 범위의 전표를 추가로 받음 (비교용 직전 기간 포함)
+  const [extraLoading, setExtraLoading] = useState(false);
+  useEffect(() => {
+    if (!months.length) return;
+    const need = monthsBack(shiftYm(months[0], -1), Math.max(12, span))[0];
+    const k = KJ() as unknown as { ensureVoucherFrom?: (ym: string) => Promise<boolean> };
+    if (!k?.ensureVoucherFrom) return;
+    setExtraLoading(true);
+    k.ensureVoucherFrom(need).finally(() => setExtraLoading(false));
+  }, [months.join('|')]); // eslint-disable-line
   const inRange = useMemo(() => { const ms = new Set(months); return vouchers.filter(v => ms.has(v.ym) && (!allowed || allowed.has(v.dept.replace(/\s+/g, '').toLowerCase()))); }, [vouchers, months, allowed]);
   const deptList = useMemo(() => Array.from(new Set(inRange.map(v => v.dept))).filter(Boolean).sort(), [inRange]);
   const hqs = useMemo(() => Array.from(new Set(deptList.map(d => deptMaster[d] || '기타'))).sort(), [deptList, deptMaster]);
@@ -90,20 +101,21 @@ export default function DeptCost() {
           {depts.length > 1 && <span className="chip on">{depts.length}개 부서 선택됨 <span className="x" onClick={() => setDepts([])}>×</span></span>}
           {acc && <span className="chip on">{acc} <span className="x" onClick={() => setAcc('')}>×</span></span>}
           <span className="sp" />
+          {extraLoading && <span className="help"><span className="spinner" /> 이전 전표 불러오는 중</span>}
           <span className="help">{months.length ? (months.length === 1 ? ymL(months[0]) : `${ymL(months[0])} ~ ${ymL(months[months.length - 1])}`) : ''} · {fmt(scoped.length)}건 · 합계 <b className="num" style={{ color: 'var(--fg)', fontSize: 14 }}>{kor(total)}</b></span>
         </div>
 
         {months.length > 0 && (
           <div className="verdict">
             <div>
-              <div className="l">{months.length === 1 ? ymL(months[0]) : `${ymL(months[0])} ~ ${ymL(months[months.length - 1])}`} 비용 합계{effDepts?.length === 1 ? ` · ${effDepts[0]}` : hq ? ` · ${hq}` : ''}{acc ? ` · ${acc.replace(/^\((판|제)\)/, '')}` : ''}</div>
+              <div className="l">{months.length === 1 ? ymL(months[0]) : `${ymL(months[0])} ~ ${ymL(months[months.length - 1])}`} 비용 합계{effDepts?.length === 1 ? ` · ${effDepts[0]}` : hq ? ` · ${hq}` : ''}{acc ? ` · ${acc.replace(/^\((판|제)\)/, '')}` : ''}<HelpDot id="cost.verdict" /></div>
               <div className="big">{kor(total)}</div>
               <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · {fmt(scoped.length)}건{diffPct != null && <> · 직전 {span}개월 대비 <b style={{ color: diff > 0 ? 'var(--neg)' : '#2c7f2c' }}>{diff >= 0 ? '+' : ''}{diffPct}%</b> ({diff >= 0 ? '+' : ''}{kor(diff)})</>}</div>
               {biggestChange && Math.abs(biggestChange[1]) > 0 && <div className="help" style={{ marginTop: 6 }}>가장 크게 바뀐 계정: <b style={{ color: 'var(--fg)' }}>{biggestChange[0].replace(/^\((판|제)\)/, '')}</b> {biggestChange[1] >= 0 ? '+' : ''}{kor(biggestChange[1])}</div>}
               <div className="mini">{trend.map(([m, v]) => <div key={m} className={'col' + (months.includes(m) ? ' on' : '')} title={`${ymL(m)} · ${fmt(v)}원`} onClick={() => { setEndYm(m); setSpan(1); }}><i style={{ height: Math.max(2, Math.round(v / tMax * 52)) }} /><small>{+m.slice(4)}월</small></div>)}</div>
             </div>
             <div>
-              <div className="l">부서 × 계정 <span>금액 큰 순 상위 {mx.ds.length}부서 · {mx.as.length}계정 · 칸을 누르면 그 전표만</span></div>
+              <div className="l">부서 × 계정<HelpDot id="cost.matrix" /> <span>금액 큰 순 상위 {mx.ds.length}부서 · {mx.as.length}계정 · 칸을 누르면 그 전표만</span></div>
               <div className="tbl-wrap" style={{ marginTop: 8 }}><table className="mx">
                 <thead><tr><th>부서</th>{mx.as.map(a => <th key={a} title={a}>{a.replace(/^\((판|제)\)/, '')}</th>)}<th>합계</th></tr></thead>
                 <tbody>{mx.ds.map(d => { const row = mx.m[d] || {}; const rt = byDept.find(x => x[0] === d)?.[1] || 0; return <tr key={d}><td title={d} onClick={() => setDepts([d])}>{d}</td>{mx.as.map(a => { const v = row[a] || 0; const k = v / mx.max; return <td key={a} style={{ background: v ? `rgba(242,106,27,${0.06 + k * 0.6})` : undefined, color: k > 0.8 ? '#fff' : undefined, fontWeight: k > 0.5 ? 700 : undefined }} onClick={() => { setDepts([d]); setAcc(a); }}>{v ? fmt(v) : ''}</td>; })}<td className="tot" onClick={() => setDepts([d])}>{fmt(rt)}</td></tr>; })}</tbody>
@@ -113,18 +125,18 @@ export default function DeptCost() {
         )}
 
         <div className="side">
-          <div className="card"><div className="hd">부서별 합계 <span className="help" style={{ fontWeight: 400 }}>누르면 그 부서만</span></div>
+          <div className="card"><div className="hd">부서별 합계<HelpDot id="cost.byDept" /> <span className="help" style={{ fontWeight: 400 }}>누르면 그 부서만</span></div>
             <div className="list" style={{ padding: 10 }}>
               {byDept.slice(0, 30).map(([d, v]) => <div key={d} className={'li' + (depts.length === 1 && depts[0] === d ? ' on' : '')} onClick={() => setDepts(depts.length === 1 && depts[0] === d ? [] : [d])}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{d}</span><div className="hbar"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div><span className="num">{fmt(v)}</span><span className="help num">{total ? Math.round(v / total * 100) + '%' : ''}</span></div>)}
               {!byDept.length && <div className="empty">전표가 없습니다.</div>}
             </div></div>
-          <div className="card"><div className="hd">계정별 합계 <span className="help" style={{ fontWeight: 400 }}>누르면 그 계정만</span></div>
+          <div className="card"><div className="hd">계정별 합계<HelpDot id="cost.byAcc" /> <span className="help" style={{ fontWeight: 400 }}>누르면 그 계정만</span></div>
             <div className="list" style={{ padding: 10 }}>
               {byAcc.slice(0, 30).map(([a, v]) => <div key={a} className={'li' + (acc === a ? ' on' : '')} onClick={() => setAcc(acc === a ? '' : a)}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{a.replace(/^\((판|제)\)/, '')}</span><div className="hbar"><i style={{ width: Math.max(2, Math.round(v / maxA * 100)) + '%', background: '#1f6fe8' }} /></div><span className="num">{fmt(v)}</span><span className="help num">{total ? Math.round(v / total * 100) + '%' : ''}</span></div>)}
             </div></div>
         </div>
 
-        <div className="card"><div className="hd">전표 상세</div>
+        <div className="card"><div className="hd">전표 상세<HelpDot id="voucher.table" /></div>
           <div style={{ padding: 14 }}>{months.length ? <VoucherTable filter={{ depts: effDepts, months, acc }} onAccPick={setAcc} /> : <span className="help">기준월을 선택하세요.</span>}</div>
         </div>
       </div>

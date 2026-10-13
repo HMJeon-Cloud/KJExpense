@@ -3,6 +3,7 @@
 //   LOT 상세(BL 단위) 표는 기존 컴포넌트(TreeNode)를 그대로 끼워 넣어 숫자가 달라지지 않게 했습니다.
 import { useEffect, useMemo, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import { fmt } from '../components/ui';
+import { HelpDot } from '../components/Help';
 import { kor } from '../components/charts';
 
 type Node = { name: string; type: string; children: Record<string, Node>; sales: number; cogs: number; margin: number; inventory: number; inventoryQty: number; estMargin: number; estSynth: number; estSales: number; lotGroups?: unknown[] };
@@ -187,14 +188,14 @@ export default function Trade() {
           {s && (
             <div className="verdict">
               <div>
-                <div className="l">실현 수익 (매출 − 원가)</div>
+                <div className="l">실현 수익 (매출 − 원가)<HelpDot id="trade.verdict" /></div>
                 <div className="big" style={{ color: s.margin >= 0 ? '#2c7f2c' : '#b32b2b' }}>{kor(s.margin)}<span className="rate" style={{ color: s.margin >= 0 ? '#2c7f2c' : '#b32b2b' }}>{rate == null ? '' : rate + '%'}</span></div>
                 <div className="help" style={{ marginTop: 6 }}>{fmt(s.margin)}원 · 매출의 {rate == null ? '-' : rate + '%'}가 수익으로 남았습니다.</div>
                 <div className="stack"><i style={{ width: costShare + '%', background: '#f26a1b' }} /><i style={{ width: (100 - costShare) + '%', background: s.margin >= 0 ? '#3aa63a' : '#d93c3c' }} /></div>
                 <div className="stack-lg"><span>원가 {pctS(s.cogs, s.sales)}</span><span>수익 {rate == null ? '-' : rate + '%'}</span></div>
               </div>
               <div>
-                <div className="l">매출에서 원가를 빼면</div>
+                <div className="l">매출에서 원가를 빼면<HelpDot id="trade.verdict" /></div>
                 <div className="flow">
                   <div><div className="help">매출액</div><div className="n" style={{ color: '#1f6fe8' }}>{kor(s.sales)}</div><div className="help num">{fmt(s.sales)}</div></div>
                   <span className="op">−</span>
@@ -203,11 +204,11 @@ export default function Trade() {
                   <div><div className="help">실현 수익</div><div className="n" style={{ color: s.margin >= 0 ? '#2c7f2c' : '#b32b2b' }}>{kor(s.margin)}</div><div className="help num">{fmt(s.margin)}</div></div>
                 </div>
                 <div className="help" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--line)' }}>
-                  <b style={{ color: 'var(--fg)' }}>재고 평가액 {kor(s.inventory)}</b> · 설정 판매가로 팔리면 예상 수익 구매 {kor(s.estMargin)} · 합성 {kor(s.estSynth)} · 영업 {kor(s.estSales)}
+                  <b style={{ color: 'var(--fg)' }}>재고 평가액 {kor(s.inventory)}</b><HelpDot id="trade.verdict" /> · 설정 판매가 기준 수익 구매 {kor(s.estMargin)} · 합성 {kor(s.estSynth)} · 영업 {kor(s.estSales)}<HelpDot id="trade.est" />
                 </div>
               </div>
               <div>
-                <div className="l">발행월별 실현 수익 <span style={{ color: 'var(--fg-3)' }}>최근 {months.length}개월</span></div>
+                <div className="l">발행월별 실현 수익<HelpDot id="trade.monthly" /> <span style={{ color: 'var(--fg-3)' }}>최근 {months.length}개월</span></div>
                 {months.length ? (
                   <div className="mini">{months.map(([m, v]) => <div key={m} className="col" title={`${m.slice(0, 4)}-${m.slice(4)} · ${fmt(v)}원`}><i className={v < 0 ? 'neg' : ''} style={{ height: Math.max(2, Math.round(Math.abs(v) / mMax * 48)) }} /><small>{+m.slice(4)}월</small></div>)}</div>
                 ) : <div className="empty">판매 발행 내역이 없습니다.</div>}
@@ -226,7 +227,7 @@ export default function Trade() {
           )}
 
           <div className="card">
-            <div className="hd">구조별 보기
+            <div className="hd">구조별 보기<HelpDot id="trade.tree" />
               <span className="seg" style={{ marginLeft: 10 }}>{LEVELS.slice(0, 5).map((t, i) => <button key={t} className={lvl === i + 1 ? 'on' : ''} onClick={() => expandTo(i + 1)}>{LEVEL[t]}까지</button>)}</span>
               <span className="sp" />
               <input className="inp" style={{ width: 200 }} placeholder="이름으로 찾기 (품목·부서…)" value={q} onChange={e => setQ(e.target.value)} />
@@ -253,7 +254,7 @@ function Rank({ title, rows, total, onPick, unit }: { title: string; rows: { nam
   const max = Math.max(1, ...top.map(r => r.sales));
   return (
     <div className="card">
-      <div className="hd">{title}<span className="help" style={{ fontWeight: 400 }}>매출 순 · 누르면 그 조건으로 조회</span></div>
+      <div className="hd">{title}<HelpDot id="trade.rank" /><span className="help" style={{ fontWeight: 400 }}>매출 순 · 누르면 그 조건으로 조회</span></div>
       <div className="rk">
         <div className="r" style={{ cursor: 'default', color: 'var(--fg-3)', fontSize: 11.5 }}><span>{unit || '부서'}</span><span style={{ textAlign: 'right' }}>실현 수익</span><span style={{ textAlign: 'right' }}>수익률</span></div>
         {top.map(r => (

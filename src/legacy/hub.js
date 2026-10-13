@@ -345,6 +345,27 @@ function voucherRange() {
   return { from: y + ('0' + m).slice(-2), to: '999912' }; // 마감월 이후 달도 포함 (업로드 직후 확인용)
 }
 KJHub.voucherRange = voucherRange;
+// 13개월보다 이전 달을 볼 때: 그 범위의 전표 원본을 추가로 받아 붙임 (전표 상세·키워드용)
+let extraFrom = null; // 지금까지 추가로 받은 가장 이른 달
+KJHub.ensureVoucherFrom = async function (ym) {
+  ym = String(ym || '').slice(0, 6);
+  const base = voucherRange().from;
+  const have = extraFrom || base;
+  if (!/^[0-9]{6}$/.test(ym) || ym >= have || !Array.isArray(KJHub.data.voucher)) return false;
+  let y = +have.slice(0, 4), m = +have.slice(4, 6) - 1; if (m < 1) { m = 12; y--; }
+  const to = y + ('0' + m).slice(-2);
+  const t0 = performance.now();
+  let text;
+  try { text = await rpcText(NO_COMPACT.v ? 'voucher_rows_range' : 'voucher_rows_range_compact', { p_from: ym, p_to: to }); }
+  catch (e) { text = await rpcText('voucher_rows_range', { p_from: ym, p_to: to }); }
+  const more = parseRowsText(text);
+  KJHub.data.voucher = more.concat(KJHub.data.voucher);
+  extraFrom = ym;
+  console.log('[KJHub] 전표 추가 ' + ym + '~' + to + ' ' + more.length + '건 ' + Math.round(performance.now() - t0) + 'ms');
+  publishGated(['voucher']);
+  try { window.dispatchEvent(new CustomEvent('kjhub:data', { detail: { data: KJHub.data } })); } catch (e) {}
+  return true;
+};
 async function rpcText(name, body) {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + name, {
