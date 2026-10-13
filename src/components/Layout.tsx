@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { ymLabel, useUI } from './ui';
 import { supabase } from '../lib/supabase';
 import LegacyHost, { DataStatus } from '../legacy/LegacyHost';
 import { HelpHost } from './Help';
+import { InstallButton } from './Install';
 
 // 화면 레지스트리 — 3단계에서 기존 화면을 옮기며 채웁니다.
 export const SCREENS: { group: string; items: { path: string; title: string; admin?: boolean; privileged?: boolean }[] }[] = [
@@ -38,35 +40,64 @@ export default function Layout() {
   const loc = useLocation();
   const isAdmin = employee?.role === 'admin';
   const privileged = isAdmin || employee?.role === 'all';
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => { setDrawer(false); }, [loc.pathname]); // 화면을 고르면 메뉴 닫기
+  useEffect(() => { document.body.style.overflow = drawer ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [drawer]);
+  const groups = SCREENS.map(g => ({ ...g, items: g.items.filter(i => (!i.admin || isAdmin) && (!i.privileged || privileged)) })).filter(g => g.items.length);
+  const current = SCREENS.flatMap(g => g.items).find(i => loc.pathname === i.path || loc.pathname.startsWith(i.path + '/'));
+  const saveClose = async (val: string) => { const v = val.replace('-', ''); if (!/^\d{6}$/.test(v)) return; const { error } = await supabase.rpc('save_config', { p_key: 'closeMonth', p_value: v, p_summary: '마감월 ' + ymLabel(v) }); if (error) return toast(error.message, 'err'); setCloseMonth(v); (window as unknown as { KJHub?: { setCloseMonth: (m: string) => void } }).KJHub?.setCloseMonth(v); toast('마감월을 ' + ymLabel(v) + ' 로 저장했습니다.'); };
+  const closeInput = (id: string, style?: React.CSSProperties) => <input id={id} type="month" className="inp" style={style} title="마감월 (관리자)" value={closeMonth ? closeMonth.slice(0, 4) + '-' + closeMonth.slice(4, 6) : ''} onChange={e => saveClose(e.target.value)} />;
   return (
     <>
       <header className="topbar">
         <img src={import.meta.env.BASE_URL + 'logo.png'} alt="" />
-        <span className="brand">국전 비용 현황{isAdmin ? (
-          <input id="close-month" type="month" className="inp" style={{ marginLeft: 8, padding: '2px 6px', fontSize: 12, fontWeight: 400 }} title="마감월 (관리자)" value={closeMonth ? closeMonth.slice(0, 4) + '-' + closeMonth.slice(4, 6) : ''}
-            onChange={async e => { const v = e.target.value.replace('-', ''); if (!/^\d{6}$/.test(v)) return; const { error } = await supabase.rpc('save_config', { p_key: 'closeMonth', p_value: v, p_summary: '마감월 ' + ymLabel(v) }); if (error) return toast(error.message, 'err'); setCloseMonth(v); (window as unknown as { KJHub?: { setCloseMonth: (m: string) => void } }).KJHub?.setCloseMonth(v); toast('마감월을 ' + ymLabel(v) + ' 로 저장했습니다.'); }} />
-        ) : <small>마감월 {ymLabel(closeMonth)}</small>}</span>
+        <span className="brand">KJ Expense{isAdmin ? closeInput('close-month', { marginLeft: 8, padding: '2px 6px', fontSize: 12, fontWeight: 400 }) : <small>마감월 {ymLabel(closeMonth)}</small>}</span>
+        <span className="brand-m">{current?.title ?? 'KJ Expense'}</span>
         <nav className="nav">
-          {SCREENS.map(g => {
-            const items = g.items.filter(i => (!i.admin || isAdmin) && (!i.privileged || privileged));
-            if (!items.length) return null;
-            const on = items.some(i => loc.pathname.startsWith(i.path));
+          {groups.map(g => {
+            const on = g.items.some(i => loc.pathname.startsWith(i.path));
             return (
               <div className="grp" key={g.group}>
                 <button className={on ? 'on' : ''}>{g.group}</button>
-                <div className="menu">{items.map(i => <NavLink key={i.path} to={i.path}>{i.title}</NavLink>)}</div>
+                <div className="menu">{g.items.map(i => <NavLink key={i.path} to={i.path}>{i.title}</NavLink>)}</div>
               </div>
             );
           })}
         </nav>
         <span className="sp" />
         <DataStatus />
+        <InstallButton className="d-only" />
         <span className="user">
           <span className="avatar">{employee?.name?.slice(0, 1) ?? '?'}</span>
           <span className="who">{employee?.name} · {employee?.dept} {employee?.grade}</span>
           <button className="btn sm ghost" onClick={logout}>로그아웃</button>
         </span>
+        <button className="hamb" aria-label="메뉴 열기" onClick={() => setDrawer(true)}><span /><span /><span /></button>
       </header>
+      {drawer && (
+        <div className="mdrawer-ov" onClick={() => setDrawer(false)}>
+          <aside className="mdrawer" onClick={e => e.stopPropagation()} aria-label="메뉴">
+            <div className="md-user">
+              <span className="avatar">{employee?.name?.slice(0, 1) ?? '?'}</span>
+              <div><b>{employee?.name}</b><small>{employee?.dept} {employee?.grade}</small></div>
+              <button className="md-x" aria-label="메뉴 닫기" onClick={() => setDrawer(false)}>×</button>
+            </div>
+            <div className="md-close">마감월 {isAdmin ? closeInput('close-month-m') : <b>{ymLabel(closeMonth)}</b>}</div>
+            <nav className="md-nav">
+              {groups.map(g => (
+                <div key={g.group} className="md-grp">
+                  <div className="md-gt">{g.group}</div>
+                  {g.items.map(i => <NavLink key={i.path} to={i.path}>{i.title}</NavLink>)}
+                </div>
+              ))}
+            </nav>
+            <div className="md-foot">
+              <InstallButton block />
+              <button className="btn" style={{ width: '100%' }} onClick={logout}>로그아웃</button>
+            </div>
+          </aside>
+        </div>
+      )}
       <LegacyHost />
       <Outlet />
       <HelpHost />

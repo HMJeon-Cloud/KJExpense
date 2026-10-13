@@ -1,5 +1,20 @@
 // 공용 SVG 차트 — 디자인 가이드 색 고정: 배분 수익(파랑) · 지원 수익(라임) · 비용(주황) · 지원 비용(노랑)
+import { useEffect, useRef, useState } from 'react';
 import { fmt } from './ui';
+
+/** 차트가 놓인 칸의 실제 너비 — 휴대폰에서 글자가 작아지지 않도록 그 너비로 다시 그림 */
+export function useBoxWidth(fallback: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const set = () => { const v = Math.round(el.getBoundingClientRect().width); if (v > 0) setW(v); };
+    set();
+    const ro = new ResizeObserver(set); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
 
 export const C = { margin: '#1f6fe8', sup: '#9ccf2a', cost: '#f26a1b', supCost: '#f5b400', grid: 'var(--line)', text: 'var(--fg-3)' };
 const short = (v: number) => { const a = Math.abs(v); if (a >= 1e8) return (v / 1e8).toFixed(1) + '억'; if (a >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만'; return fmt(v); };
@@ -77,7 +92,7 @@ export function Donut({ slices, total, centerLabel }: { slices: { a: string; v: 
     return { d: `M${x0},${y0} A${R},${R} 0 ${big} 1 ${x1},${y1} L${x2},${y2} A${r},${r} 0 ${big} 0 ${x3},${y3} Z`, color: PALETTE[i % PALETTE.length], s };
   });
   return (
-    <div className="row" style={{ gap: 18, alignItems: 'center' }}>
+    <div className="row donut" style={{ gap: 18, alignItems: 'center' }}>
       <svg viewBox="0 0 160 160" style={{ width: 150, flexShrink: 0 }}>
         {arcs.map((a, i) => <path key={i} d={a.d} fill={a.color} stroke="var(--surface)" strokeWidth={1.5} />)}
         <text x={cx} y={cy - 4} textAnchor="middle" fontSize={11} fill="var(--fg-3)">{centerLabel}</text>
@@ -109,8 +124,9 @@ export const kor = (v: number) => { const a = Math.abs(v), s = v < 0 ? '-' : '';
 
 /** 순수익(수익-비용) 막대 + 수익·비용 선 — 한눈에 "남았나 넘었나" */
 export function NetTrend({ months, margin, cost, height = 240 }: { months: string[]; margin: number[]; cost: number[]; height?: number }) {
-  const W = 760, H = height, padL = 54, padR = 12, top = 16, bottom = 30;
-  const n = months.length; if (!n) return null;
+  const [box, bw0] = useBoxWidth(760);
+  const W = Math.max(300, bw0), narrow = W < 560, H = narrow ? Math.min(height, 230) : height, padL = narrow ? 40 : 54, padR = narrow ? 6 : 12, top = 16, bottom = 30;
+  const n = months.length; if (!n) return <div ref={box} />;
   const net = months.map((_, i) => margin[i] - cost[i]);
   const maxV = Math.max(1, ...margin, ...cost) * 1.05;
   const minNet = Math.min(0, ...net);
@@ -122,7 +138,8 @@ export function NetTrend({ months, margin, cost, height = 240 }: { months: strin
   const ticks: number[] = []; const step = niceStep((maxV - minV) / 4); for (let v = Math.ceil(minV / step) * step; v <= maxV; v += step) ticks.push(v);
   const path = (s: number[]) => s.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join(' ');
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="월별 순수익 추이">
+    <div ref={box} style={{ width: '100%', minWidth: 0 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="월별 순수익 추이">
       {ticks.map(t => <g key={t}><line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke={C.grid} /><text x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize={10} fill={C.text} fontFamily="var(--font-num)">{kor(t)}</text></g>)}
       <line x1={padL} x2={W - padR} y1={y0} y2={y0} stroke="var(--fg-3)" strokeWidth={1.2} />
       {months.map((m, i) => {
@@ -132,8 +149,8 @@ export function NetTrend({ months, margin, cost, height = 240 }: { months: strin
             <rect x={x(i) - bw / 2} y={pos ? y(v) : y0} width={bw} height={Math.max(1, Math.abs(y(v) - y0))} fill={pos ? '#3aa63a' : '#d93c3c'} opacity={0.85} rx={3}>
               <title>{ymL(m)} 순수익 {fmt(v)}원 (수익 {fmt(margin[i])} - 비용 {fmt(cost[i])})</title>
             </rect>
-            <text x={x(i)} y={pos ? y(v) - 5 : y(v) + 13} textAnchor="middle" fontSize={11} fontWeight={700} fill={pos ? '#2c7f2c' : '#b32b2b'} fontFamily="var(--font-num)">{(pos ? '+' : '') + kor(v)}</text>
-            <text x={x(i)} y={H - 9} textAnchor="middle" fontSize={11} fill={i === n - 1 ? 'var(--fg)' : C.text} fontWeight={i === n - 1 ? 700 : 400}>{ymL(m)}</text>
+            {(slot >= 46 || i === n - 1) && <text x={x(i)} y={pos ? y(v) - 5 : y(v) + 13} textAnchor="middle" fontSize={narrow ? 10 : 11} fontWeight={700} fill={pos ? '#2c7f2c' : '#b32b2b'} fontFamily="var(--font-num)">{(pos ? '+' : '') + kor(v)}</text>}
+            <text x={x(i)} y={H - 9} textAnchor="middle" fontSize={narrow ? 10 : 11} fill={i === n - 1 ? 'var(--fg)' : C.text} fontWeight={i === n - 1 ? 700 : 400}>{slot < 64 ? +m.slice(4, 6) + '월' : ymL(m)}</text>
           </g>
         );
       })}
@@ -141,6 +158,7 @@ export function NetTrend({ months, margin, cost, height = 240 }: { months: strin
       <path d={path(cost)} fill="none" stroke={C.cost} strokeWidth={2} strokeLinejoin="round" strokeDasharray="5 3" />
       {months.map((_, i) => <g key={'d' + i}><circle cx={x(i)} cy={y(margin[i])} r={3} fill={C.margin} /><circle cx={x(i)} cy={y(cost[i])} r={3} fill={C.cost} /></g>)}
     </svg>
+    </div>
   );
 }
 function niceStep(raw: number) { const p = Math.pow(10, Math.floor(Math.log10(Math.max(1, raw)))); const r = raw / p; return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * p; }

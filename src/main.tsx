@@ -73,3 +73,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <UIProvider><AuthProvider><HashRouter><Gate /></HashRouter></AuthProvider></UIProvider>
   </React.StrictMode>,
 );
+
+// 앱 설치(PWA)용 서비스 워커 — 배포 주소(/저장소이름/) 아래에서만
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js', { scope: import.meta.env.BASE_URL }).catch(() => { /* 설치 기능만 빠짐 */ }); });
+}

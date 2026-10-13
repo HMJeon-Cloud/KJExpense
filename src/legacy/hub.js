@@ -1,4 +1,4 @@
-// ===== 국전 비용 현황 · 공용 셸 (Supabase 판) =====
+// ===== KJ Expense · 공용 셸 (Supabase 판) =====
 // 기존 Apps Script 셸(block 4)의 KJHub API 를 그대로 제공하되, 데이터는 Supabase rows 테이블에서 읽습니다.
 import { supabase, DATASETS, SUPABASE_URL, SUPABASE_ANON } from '../lib/supabase';
 

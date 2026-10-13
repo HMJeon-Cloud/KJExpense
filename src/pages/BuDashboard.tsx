@@ -128,6 +128,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
         .acc:hover{background:var(--surface-2)}
         .toprow{display:grid;grid-template-columns:20px 130px 1fr 120px 60px;gap:10px;align-items:center;padding:7px 0;cursor:pointer}
         .toprow:hover{background:var(--surface-2)}
+        .toprow.wide{grid-template-columns:20px 190px 1fr 120px 60px}
         .bar{height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden}
         .bar i{display:block;height:100%;background:${C.cost};border-radius:999px}
         @media (max-width:900px){.verdict{grid-template-columns:1fr}.verdict .big{border-right:0;border-bottom:1px solid var(--line)}.duo,.costgrid{grid-template-columns:1fr}.toprow{grid-template-columns:20px 100px 1fr 90px 50px}}
@@ -243,7 +244,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                   {(model.realized ? [] : model.revenue.byGroup).slice().sort((a, b) => b.cur - a.cur).map((g, i, arr) => {
                     const max = Math.max(1, ...arr.map(x => Math.abs(x.cur)));
                     return (
-                      <div key={g.key} className="toprow" style={{ cursor: 'default', gridTemplateColumns: '20px 190px 1fr 120px 60px' }} title={`${model.months.length}개월 합계 ${fmt(g.sum)}`}>
+                      <div key={g.key} className="toprow wide" style={{ cursor: 'default' }} title={`${model.months.length}개월 합계 ${fmt(g.sum)}`}>
                         <span className="help num">{i + 1}</span>
                         <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={g.label}>{g.label}</span>
                         <div className="bar"><i style={{ width: Math.max(2, Math.round(Math.abs(g.cur) / max * 100)) + '%', background: g.cur < 0 ? '#d93c3c' : C.margin }} /></div>

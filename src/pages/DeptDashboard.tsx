@@ -166,7 +166,7 @@ export default function DeptDashboard() {
           <section className="sec">
             <h2>부서 현황<HelpDot id="dept.table" /></h2>
             <p className="lead">{ymL(model.cur)} 기준. 열 제목을 누르면 정렬되고, 부서를 누르면 아래에 상세가 펼쳐집니다.</p>
-            <div className="tbl-wrap">
+            <div className="tbl-wrap" ref={el => { if (el && !(el as unknown as { _ro?: unknown })._ro) { const ro = new ResizeObserver(() => el.style.setProperty('--tw', el.clientWidth + 'px')); ro.observe(el); (el as unknown as { _ro?: unknown })._ro = ro; } }}>
               <table className="score">
                 <thead><tr>
                   <Th k="name" cur={sort} set={setSort}>부서</Th><th>인원</th><Th k="margin" cur={sort} set={setSort}>수익</Th><Th k="cost" cur={sort} set={setSort}>비용</Th><Th k="net" cur={sort} set={setSort}>순수익</Th><Th k="ratio" cur={sort} set={setSort}><span style={{ minWidth: 140, display: 'inline-block' }}>비용/수익</span></Th><th>비용 전월비</th><th>누적 순수익</th><th style={{ width: 130 }}>추이</th><th>점검</th>
@@ -184,8 +184,8 @@ export default function DeptDashboard() {
                       <td style={{ textAlign: 'left', fontFamily: 'var(--font-body)' }}>{x.alerts.length ? <span className={'tag ' + (x.alerts.some(a => a.up) ? 'n' : 'b')}>{x.alerts.length}건</span> : <span className="help">-</span>}</td>
                     </tr>,
                     openDept === x.d && (
-                      <tr key={x.d + '-detail'}><td colSpan={10} style={{ padding: 0, whiteSpace: 'normal', textAlign: 'left', fontFamily: 'var(--font-body)' }}>
-                        <DeptDetail x={x} model={model} onDrill={drill} />
+                      <tr key={x.d + '-detail'}><td className="dtl" colSpan={10} style={{ padding: 0, whiteSpace: 'normal', textAlign: 'left', fontFamily: 'var(--font-body)' }}>
+                        <div className="dtl-in"><DeptDetail x={x} model={model} onDrill={drill} /></div>
                       </td></tr>
                     ),
                   ])}
@@ -238,13 +238,13 @@ function DeptDetail({ x, model, onDrill }: { x: Dept & { r: number | null; curM:
       <div className="grid2">
         <div>
           <NetTrend months={months} margin={x.margin} cost={x.cost} height={210} />
-          <table className="mtbl" style={{ marginTop: 10 }}>
+          <div className="tbl-wrap" style={{ marginTop: 10 }}><table className="mtbl">
             <thead><tr><th>월</th><th>수익</th><th>그중 지원</th><th>비용</th><th>그중 지원</th><th>순수익</th><th>비용/수익</th><th>인원</th></tr></thead>
             <tbody>
               {months.map((m, i) => { const n = x.margin[i] - x.cost[i]; const r = ratio(x.cost[i], x.margin[i]); return <tr key={m}><td>{ymL(m)}</td><td>{fmt(x.margin[i])}</td><td style={{ color: 'var(--fg-3)' }}>{x.supAlloc[i] ? fmt(x.supAlloc[i]) : ''}</td><td>{fmt(x.cost[i])}</td><td style={{ color: 'var(--fg-3)' }}>{x.supCost[i] ? fmt(x.supCost[i]) : ''}</td><td style={{ color: n >= 0 ? '#2c7f2c' : 'var(--neg)' }}>{fmt(n)}</td><td style={{ color: r != null && r > 100 ? 'var(--neg)' : undefined }}>{r == null ? '-' : r + '%'}</td><td>{x.emp[i] || ''}</td></tr>; })}
               <tr className="sum"><td>합계</td><td>{fmt(sumM)}</td><td>{sum(x.supAlloc) ? fmt(sum(x.supAlloc)) : ''}</td><td>{fmt(sumC)}</td><td>{sum(x.supCost) ? fmt(sum(x.supCost)) : ''}</td><td style={{ color: sumM - sumC >= 0 ? '#2c7f2c' : 'var(--neg)' }}>{fmt(sumM - sumC)}</td><td>{ratio(sumC, sumM) == null ? '-' : ratio(sumC, sumM) + '%'}</td><td></td></tr>
             </tbody>
-          </table>
+          </table></div>
         </div>
         <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
           <div>

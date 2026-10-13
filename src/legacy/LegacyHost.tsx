@@ -98,10 +98,10 @@ export function DataStatus() {
     <span className="dstat" style={{ position: 'relative', marginRight: 10 }}>
       <button className="btn sm ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }} onClick={() => setOpen(o => !o)} title="데이터 상태 · 다시 불러오기">
         {loading.length > 0 ? <span className="spinner" style={{ width: 10, height: 10 }} /> : <i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color }} />}
-        <span>{label}</span>
+        <span className="dstat-l">{label}</span>
       </button>
       {open && (
-        <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.08)', padding: 10, display: 'grid', gap: 6, fontSize: 12 }}>
+        <div className="dstat-pop" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.08)', padding: 10, display: 'grid', gap: 6, fontSize: 12 }}>
           <div className="row" style={{ gap: 8, alignItems: 'center' }}><b>데이터 상태</b><span className="sp" /><button className="btn sm" onClick={async () => { setOpen(false); await cacheClear(); await loadAll(true); }} title="브라우저 캐시를 지우고 서버에서 다시 받습니다">다시 불러오기</button></div>
           {keys.map(k => { const m = meta[k] || { state: 'idle', note: '' }; const c = m.state === 'ready' ? '#3aa63a' : m.state === 'error' ? 'var(--neg)' : m.state === 'loading' ? '#f5b400' : 'var(--line-2)';
             return <div key={k} className="row" style={{ gap: 8, alignItems: 'center' }}><i style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 99, background: c, flex: 'none' }} /><span style={{ width: 110, flex: 'none' }}>{DATASETS[k].label}</span><span className="help" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.state === 'ready' ? m.note : m.state === 'error' ? '오류: ' + m.note : m.state === 'loading' ? '불러오는 중' : '아직 안 받음'}</span></div>; })}

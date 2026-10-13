@@ -1,4 +1,4 @@
-# 국전 비용 현황 — GitHub + Supabase 버전
+# KJ Expense — GitHub + Supabase 버전
 
 기존 Apps Script 대시보드를 **GitHub Pages(화면) + Supabase 무료 플랜(DB·로그인)** 구조로 옮긴 프로젝트입니다.
 

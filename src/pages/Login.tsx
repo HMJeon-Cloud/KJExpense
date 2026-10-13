@@ -32,7 +32,7 @@ export default function Login() {
     <div className="login">
       <div className="hero">
         <img src={import.meta.env.BASE_URL + 'logo.png'} alt="" />
-        <h1>국전 비용 현황</h1>
+        <h1>KJ Expense</h1>
         <p>부서별 수익·비용과 구매/판매, 지원 내역을 한 곳에서 봅니다.</p>
         {closeMonth && <p className="help" style={{ marginTop: 28 }}>마감월 {ymLabel(closeMonth)}</p>}
       </div>

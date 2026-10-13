@@ -76,6 +76,7 @@ export default function SupportSettings() {
         .ss .dd b{font-family:var(--font-num);font-weight:600}
         .ss .inp.sm{padding:3px 6px;font-size:12.5px}
         .ss .x{cursor:pointer;color:var(--fg-3);padding:0 4px}.ss .x:hover{color:var(--neg)}
+        @media(max-width:820px){.ss table.sst{min-width:760px}.ss .gh .inp{flex:1 1 160px}}
         @media(max-width:1000px){.ss .verdict{grid-template-columns:1fr}.ss .verdict>div+div{border-left:0;border-top:1px solid var(--line)}.ss .rk{grid-template-columns:1fr}}
       `}</style>
       <div className="ss" style={{ display: 'grid', gap: 16 }}>
@@ -121,7 +122,7 @@ export default function SupportSettings() {
                 {editable && <button className="btn sm" onClick={() => mut(() => { g.tasks.push({ task: '', desc: '', scope: 'all', buNames: [], deptNames: [], excludes: [], split: 'unit', amount: 0, detail: {} }); setOpenTask(gi + ':' + (g.tasks.length - 1)); })}>+ 업무 추가</button>}
                 {editable && <button className="btn sm ghost" onClick={async () => { if (await confirm('지원 부서 삭제', `[${g.dept || '미지정'}]의 지원 내역 ${g.tasks.length}건을 모두 삭제합니다. 저장하기 전까지는 되돌리기로 취소할 수 있습니다.`, { danger: true, okText: '삭제' })) mut(() => { draft.splice(gi, 1); }); }}>부서 삭제</button>}
               </div>
-              <table>
+              <div className="tbl-wrap"><table className="sst">
                 <thead><tr><th style={{ width: 200 }}>업무</th><th>설명</th><th style={{ width: 130 }}>대상</th><th style={{ width: 130 }}>나누는 방식</th><th className="n" style={{ width: 130 }}>금액</th><th className="n" style={{ width: 120 }}>총액</th><th style={{ width: 70 }}></th></tr></thead>
                 <tbody>
                   {tasks.map(t => { const ti = g.tasks.indexOf(t); const key = gi + ':' + ti; const isOpen = openTask === key; const depts = b.taskDepts(t); const shares = b.taskShares(t); const tot = shares.reduce((s, x) => s + x.amount, 0); const dim = focus && !depts.includes(focus);
@@ -156,7 +157,7 @@ export default function SupportSettings() {
                     ]; })}
                   {!g.tasks.length && <tr><td colSpan={7} className="help" style={{ padding: 10 }}>업무가 없습니다. "+ 업무 추가"를 누르세요.</td></tr>}
                 </tbody>
-              </table>
+              </table></div>
             </div>
           );
         })}

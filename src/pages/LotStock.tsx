@@ -47,7 +47,7 @@ export default function LotStock() {
   return (
     <div className="page brief" style={{ gap: 16, maxWidth: 1500 }}>
       <style>{`
-        .brief>*{min-width:0}
+        .brief>*,.ls>*{min-width:0}
         .ls .fbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
         .ls .fbar label{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--fg-3)}
         .ls .verdict{display:grid;grid-template-columns:1fr 1.3fr 1fr;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}

@@ -105,7 +105,7 @@ export default function DeptSupport() {
               return (
                 <div className="card" key={d}>
                   <div className="dhd" onClick={() => setOpen(o => ({ ...o, [d]: !isOpen }))}><span style={{ color: 'var(--fg-3)', fontSize: 11 }}>{isOpen ? '▾' : '▸'}</span>{d}<span className="help" style={{ fontWeight: 400 }}>{hqOf[d]} · 지원 {rows.length}건</span><span className="sp" /><span className="help">부담 합계 <b className="num" style={{ color: 'var(--fg)' }}>{fmt(sum)}</b>원</span></div>
-                  {isOpen && <div className="tbl-wrap"><table>
+                  {isOpen && <div className="tbl-wrap"><table className="dst">
                     <thead><tr><th style={{ width: 160 }}>지원 부서</th><th style={{ width: 200 }}>업무</th><th>설명</th><th style={{ width: 120 }}>형식</th><th style={{ width: 90 }}>대상</th><th className="n" style={{ width: 130 }}>우리 부담액</th></tr></thead>
                     <tbody>{rows.slice().sort((a, b) => b.amount - a.amount).map((r, i) => <tr key={i}><td style={{ fontWeight: 600 }}>{r.from}</td><td>{r.task}</td><td className="help">{r.desc || '-'}</td><td className="help">{SPLIT_LABEL[r.split] || r.split}</td><td className="help">{r.targetCount}개 부서</td><td className="n" style={{ fontWeight: 700 }}>{fmt(r.amount)}</td></tr>)}</tbody>
                   </table></div>}
