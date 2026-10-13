@@ -302,7 +302,27 @@ async function fetchVersions() {
   return m;
 }
 // 데이터셋을 JSON "문자열" 그대로 받아 캐시에 저장 (객체를 IndexedDB 에 넣으면 복제 비용이 커서 화면이 멈춤)
+// {cols, rows} → 원래 행 객체 (null 값은 키 자체를 넣지 않음 — 업로드 원본과 같은 모양)
+export function expandCompact(obj) {
+  if (!obj || !Array.isArray(obj.cols) || !Array.isArray(obj.rows)) return Array.isArray(obj) ? obj : [];
+  const cols = obj.cols, n = cols.length, out = new Array(obj.rows.length);
+  for (let i = 0; i < obj.rows.length; i++) {
+    const r = obj.rows[i], o = {};
+    for (let j = 0; j < n; j++) { const v = r[j]; if (v !== null && v !== undefined) o[cols[j]] = v; }
+    out[i] = o;
+  }
+  return out;
+}
+function parseRowsText(text) { const v = JSON.parse(text); return Array.isArray(v) ? v : expandCompact(v); }
+const NO_COMPACT = { v: false }; // 0005 SQL 이 없으면 한 번 실패 후 예전 방식으로 고정
 async function fetchDatasetText(key) {
+  if (!NO_COMPACT.v) {
+    try { return await rpcText('dataset_rows_compact', { p_dataset: key }); }
+    catch (e) { NO_COMPACT.v = true; console.warn('[KJHub] 압축 전송(0005 SQL) 없음 → 예전 방식:', e.message); }
+  }
+  return fetchDatasetTextFull(key);
+}
+async function fetchDatasetTextFull(key) {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/dataset_rows', {
     method: 'POST', headers: { apikey: SUPABASE_ANON, Authorization: 'Bearer ' + (session ? session.access_token : SUPABASE_ANON), 'Content-Type': 'application/json' },
@@ -340,7 +360,11 @@ async function fetchVoucherText(ver) {
   const ck = 'voucher@' + r.from;
   const cached = await cacheGet(ck);
   if (cached && ver && cached.ver === ver.ver && typeof cached.text === 'string' && typeof cached.agg === 'string') return { text: cached.text, agg: cached.agg, src: '캐시' };
-  const [agg, text] = await Promise.all([rpcText('voucher_agg'), rpcText('voucher_rows_range', { p_from: r.from, p_to: r.to })]);
+  const rangeText = async () => {
+    if (!NO_COMPACT.v) { try { return await rpcText('voucher_rows_range_compact', { p_from: r.from, p_to: r.to }); } catch (e) { NO_COMPACT.v = true; } }
+    return rpcText('voucher_rows_range', { p_from: r.from, p_to: r.to });
+  };
+  const [agg, text] = await Promise.all([rpcText('voucher_agg'), rangeText()]);
   if (ver) cachePut(ck, { ver: ver.ver, text, agg });
   return { text, agg, src: '서버' };
 }
@@ -377,7 +401,9 @@ export async function loadKeys(keys, force) {
       const cached = force ? null : await cacheGet(k);
       if (cached && v && cached.ver === v.ver && typeof cached.text === 'string') return { k, text: cached.text, src: '캐시' };
       try {
+        const t1 = performance.now();
         const text = await fetchDatasetText(k);
+        console.log('[KJHub] 받기 ' + k + ' ' + Math.round(performance.now() - t1) + 'ms, ' + Math.round(text.length / 1024) + 'KB' + (NO_COMPACT.v ? '' : ' (압축형)'));
         if (v) cachePut(k, { ver: v.ver, text }); // 문자열 저장 — 복제 비용 거의 없음
         return { k, text, src: '서버' };
       } catch (e) {
@@ -393,7 +419,7 @@ export async function loadKeys(keys, force) {
     try {
       if (t.err) throw t.err;
       const tp = performance.now();
-      const rows = t.rows || JSON.parse(t.text);
+      const rows = t.rows || parseRowsText(t.text);
       console.log('[KJHub] 파싱 ' + t.k + ' ' + Math.round(performance.now() - tp) + 'ms, ' + Math.round((t.text || '').length / 1024) + 'KB');
       KJHub.data[t.k] = Array.isArray(rows) ? rows : [];
       if (t.k === 'voucher') { // DB 집계가 함께 왔으면 보관, 아니면(예전 방식) 집계 없음 → 화면 코드가 원본으로 계산
