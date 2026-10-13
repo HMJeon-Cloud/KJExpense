@@ -1,0 +1,203 @@
+-- B단계 2차-1: 구매/판매 LOT 요약을 DB가 계산 (0005 다음에 실행)
+--   기존 화면 코드(trade.js processData → lotSummaryRows)와 같은 규칙으로 LOT별 매출·원가·실현수익·재고를 만들고,
+--   판매 발행월 기준 사업단위별/부서별 월 수익(marginMonthlyByBU/ByDept)을 돌려줍니다.
+--   JS 와의 대응은 각 단계 주석에 적었습니다. 검증 화면(설정 › 집계 검증)에서 JS 값과 대조합니다.
+
+-- 숫자 변환을 비어 있음(null)도 0 으로 (0004 의 kj_num 을 null 허용으로 교체)
+create or replace function public.kj_num(p text) returns numeric
+language plpgsql immutable as $$
+declare v numeric;
+begin
+  if p is null then return 0; end if;
+  begin
+    v := nullif(regexp_replace(replace(p, ',', ''), '^\s*([-+]?[0-9]*\.?[0-9]+).*$', '\1'), '')::numeric;
+  exception when others then v := 0; end;
+  return coalesce(v, 0);
+end $$;
+
+-- 열 이름 정규화: 대문자 + 공백/줄바꿈/BOM 제거   ※ JS normalizeRow
+create or replace function public.kj_norm(d jsonb) returns jsonb
+language sql immutable as $$
+  select coalesce((select jsonb_object_agg(upper(regexp_replace(key, '[\s\r\n' || chr(65279) || ']+', '', 'g')), value) from jsonb_each(d)), '{}'::jsonb)
+$$;
+-- 여러 후보 열 중 첫 번째 비어 있지 않은 값   ※ JS getVal(row, ...keys)
+create or replace function public.kj_v(d jsonb, variadic ks text[]) returns text
+language sql immutable as $$
+  select x.v from unnest(ks) with ordinality as u(k, o), lateral (select d ->> u.k as v) x where x.v is not null and x.v <> '' order by u.o limit 1
+$$;
+-- 줄바꿈 제거 + 양끝 공백 제거   ※ JS cleanString
+create or replace function public.kj_clean(p text) returns text
+language sql immutable as $$ select coalesce(regexp_replace(regexp_replace(p, '[\r\n]+', '', 'g'), '^\s+|\s+$', '', 'g'), '') $$;
+-- JS Math.round (0.5 는 올림, 음수도 +∞ 방향)
+create or replace function public.kj_round(x numeric) returns numeric
+language sql immutable as $$ select floor(x + 0.5) $$;
+
+-- LOT 요약   ※ trade.js processData → lotSummaryRows (부서 분리 전)
+create or replace function public.trade_lot_summary()
+returns table (
+  lot_key text, biz_unit text, dept text, buyer text, item_no text, item_name text, vendor text, bl_no text, lot_no text, imp_kind text, asset_seq text,
+  p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric,
+  margin_unit numeric, cogs numeric, margin numeric, inv_qty numeric, inv_amt numeric, p_date text, s_date text,
+  monthly jsonb  -- 판매 발행월별 수익 {YYYYMM: Σ(_margin)}
+)
+language sql stable security definer set search_path = public as $$
+with
+p0 as (select id, public.kj_norm(data) as d from public.rows where dataset = 'purchase'),
+e0 as (select id, public.kj_norm(data) as d from public.rows where dataset = 'expense'),
+s0 as (select id, public.kj_norm(data) as d from public.rows where dataset = 'sale'),
+-- 구매 행 분류
+p1 as (
+  select id, d,
+    public.kj_clean(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND')) as imp_kind,
+    upper(public.kj_clean(public.kj_v(d, 'LOTNO'))) as lot_u,
+    upper(public.kj_clean(public.kj_v(d, 'ITEMNOCHK', 'ITEMNO', '품번'))) as item_u,
+    public.kj_num(public.kj_v(d, 'DOMAMT', '원화금액')) as amt,
+    public.kj_num(public.kj_v(d, 'QTY', '수량')) as qty
+  from p0
+),
+disposal as (  -- 폐기 수량: lot_item 키별 Σ|qty|   ※ disposalMap
+  select lot_u || '_' || item_u as key, sum(abs(qty)) as dqty from p1 where imp_kind = '폐기' group by 1
+),
+pm as (  -- 구매 LOT 맵 (폐기 제외, 금액>0 또는 수량>0)   ※ pDataMap — LOT 없는 행은 행마다 별도 키
+  select *, case when lot_u <> '' then lot_u || '_' || item_u else '__NO_LOT_PURCHASE_' || (row_number() over (partition by (lot_u = '') order by id) - 1) || '__' end as key
+  from p1 where imp_kind <> '폐기' and (amt > 0 or qty > 0)
+),
+-- 판매 행 분류   ※ sDataMap (수량 0 제외, LOT 없는 MSV/DSV/HSV 는 품번 묶음)
+s1 as (
+  select id, d,
+    public.kj_num(public.kj_v(d, 'QTY', '수량')) as qty,
+    upper(public.kj_clean(public.kj_v(d, 'LOTNO'))) as lot_u,
+    upper(public.kj_clean(public.kj_v(d, 'ITEMNO', '품번'))) as item_u
+  from s0
+),
+sm as (
+  select *, case when lot_u <> '' then lot_u || '_' || item_u
+                 when item_u like 'MSV%' or item_u like 'DSV%' or item_u like 'HSV%' then 'NO_LOT_' || item_u
+                 else '__NO_LOT_SALE_' || (row_number() over (partition by (lot_u = '' and not (item_u like 'MSV%' or item_u like 'DSV%' or item_u like 'HSV%')) order by id) - 1) || '__' end as key
+  from s1 where qty <> 0
+),
+-- 부대비용   ※ blBaseInfoMap(8100011) / blExpenseMap
+e1 as (select id, d, public.kj_clean(public.kj_v(d, 'BLNO', 'BL번호')) as bl, public.kj_clean(public.kj_v(d, 'UMEXPENSEITEM', '비용항목코드')) as code from e0),
+bl_base as (  -- 같은 BL 이 여러 행이면 마지막 행
+  select distinct on (bl) bl, public.kj_clean(public.kj_v(d, 'BIZUNITNAME', '사업단위')) as biz_unit, public.kj_clean(public.kj_v(d, 'DEPTNAME', '부서')) as dept, public.kj_clean(public.kj_v(d, 'EMPNAME', '담당자')) as buyer
+  from e1 where bl <> '' and code like '%8100011%' order by bl, id desc
+),
+bl_exp as (
+  select bl, sum(public.kj_round(public.kj_num(public.kj_v(d, 'TOTDOMAMT', '발생금액', '원화금액', 'DOMAMT')))) as total
+  from e1 where bl <> '' and code not like '%8100011%' group by bl
+),
+-- BL×품목 구매금액 합   ※ blItemTotalAmtMap (pDataMap 행 기준, round 후 합)
+bl_item as (
+  select public.kj_clean(public.kj_v(d, 'BLNO', 'BL번호')) as bl, item_u, sum(public.kj_round(amt)) as total
+  from pm where public.kj_clean(public.kj_v(d, 'BLNO', 'BL번호')) <> '' and item_u <> '' group by 1, 2
+),
+-- 구매 행별 배분 부대비용   ※ allocExp = round(blExpense.total × amt / blItemTotal)
+pr as (
+  select pm.*, public.kj_round(pm.amt) as amt_r,
+    public.kj_clean(public.kj_v(pm.d, 'BLNO', 'BL번호')) as bl,
+    public.kj_clean(public.kj_v(pm.d, 'PERMITDATE', '수입면장일자', '구매일자')) as pdate,
+    case when coalesce(bi.total, 0) > 0 and public.kj_round(pm.amt) > 0
+         then public.kj_round(coalesce(be.total, 0) * (public.kj_round(pm.amt) / bi.total)) else 0 end as alloc_exp
+  from pm
+  left join bl_item bi on bi.bl = public.kj_clean(public.kj_v(pm.d, 'BLNO', 'BL번호')) and bi.item_u = pm.item_u
+  left join bl_exp be on be.bl = public.kj_clean(public.kj_v(pm.d, 'BLNO', 'BL번호'))
+),
+keys as (select key from pr union select key from sm),
+-- LOT 머리 정보 (첫 구매 행 우선, 없으면 첫 판매 행)   ※ firstP / firstS
+firstp as (select distinct on (key) * from pr order by key, id),
+firsts as (select distinct on (key) * from sm order by key, id),
+head as (
+  select k.key,
+    case when fp.key is not null then public.kj_clean(public.kj_v(fp.d, 'BLNO', 'BL번호')) else '상세 내역' end as bl_no,
+    case when fp.key is not null then public.kj_clean(public.kj_v(fp.d, 'LOTNO'))
+         when k.key like 'NO_LOT_%' then '-'   -- ※ JS: LOT 없는 MSV/DSV/HSV 판매행은 s.LOTNO = '-' 로 바꿔 둠
+         else public.kj_clean(public.kj_v(fs.d, 'LOTNO')) end as lot_no,
+    case when fp.key is not null then coalesce(nullif(bb.biz_unit, ''), nullif(public.kj_clean(public.kj_v(fp.d, 'BIZUNITNAME', '사업단위')), ''), '미지정 사업단위')
+         else coalesce(nullif(public.kj_clean(public.kj_v(fs.d, 'BIZUNITNAME', '사업단위')), ''), '미지정 사업단위') end as biz_unit,
+    case when fp.key is not null then coalesce(nullif(public.kj_clean(public.kj_v(fp.d, 'DEPTNAME', '부서')), ''), nullif(bb.dept, ''), '미지정 부서')
+         else coalesce(nullif(public.kj_clean(public.kj_v(fs.d, 'DEPTNAME', '부서')), ''), '미지정 부서') end as dept,
+    case when fp.key is not null then coalesce(nullif(bb.buyer, ''), nullif(public.kj_clean(public.kj_v(fp.d, 'EMPNAME', '담당자')), ''), '미지정 담당자')
+         else coalesce(nullif(public.kj_clean(public.kj_v(fs.d, 'EMPNAME', '담당자')), ''), '미지정 담당자') end as buyer,
+    case when fp.key is not null then public.kj_clean(public.kj_v(fp.d, 'ITEMNOCHK', 'ITEMNO', '품번')) else public.kj_clean(public.kj_v(fs.d, 'ITEMNO', '품번')) end as item_no,
+    case when fp.key is not null then public.kj_clean(public.kj_v(fp.d, 'ITEMNAME', '품목')) else public.kj_clean(public.kj_v(fs.d, 'ITEMNAME', '품목')) end as item_name,
+    case when fp.key is not null then public.kj_clean(public.kj_v(fp.d, 'CUSTNAME', '수입처')) || ' (' || public.kj_clean(public.kj_v(fp.d, 'CUSTNO', '수입처번호')) || ')' else '(주)국전 (116-87-01173)' end as vendor,
+    case when fp.key is not null then fp.imp_kind else '' end as imp_kind,
+    case when fp.key is not null then public.kj_clean(public.kj_v(fp.d, 'ASSETSEQ', '자산순번')) else '' end as asset_seq
+  from keys k
+  left join firstp fp on fp.key = k.key
+  left join firsts fs on fs.key = k.key
+  left join bl_base bb on fp.key is not null and bb.bl = public.kj_clean(public.kj_v(fp.d, 'BLNO', 'BL번호'))
+),
+ptot as (select key, sum(qty) as p_qty, sum(amt_r) as p_amt, sum(alloc_exp) as alloc_exp, max(pdate) as p_date from pr group by key),
+h2 as (
+  select h.*, coalesce(pt.p_qty, 0) as p_qty, coalesce(pt.p_amt, 0) as p_amt, coalesce(pt.alloc_exp, 0) as alloc_exp, coalesce(pt.p_date, '') as p_date,
+    case when coalesce(pt.p_qty, 0) > 0 then (coalesce(pt.p_amt, 0) + coalesce(pt.alloc_exp, 0)) / pt.p_qty else 0 end as unit_cost,
+    coalesce((select dqty from disposal dd where dd.key = h.lot_no || '_' || h.item_no), 0) as disposal_qty,  -- ※ JS 는 대문자화하지 않은 키로 조회 (그대로 재현)
+    substr(regexp_replace(coalesce(pt.p_date, ''), '[^0-9]', '', 'g'), 1, 6) as lot_ym
+  from head h left join ptot pt on pt.key = h.key
+),
+-- 월별품목별제조원가 색인 (같은 품목·월이 여럿이면 마지막 행)   ※ profit.js mfgIdx
+mfg as (
+  select distinct on (code, ym) code, ym, proc from (
+    select upper(public.kj_clean(public.kj_v(data, 'ITEMNO', 'ItemNo', '품번', '품목코드'))) as code,
+           substr(regexp_replace(coalesce(public.kj_v(data, 'DATE', 'Date', '년월', '월'), ''), '[^0-9]', '', 'g'), 1, 6) as ym,
+           public.kj_num(public.kj_v(data, 'PROCPRICE', 'ProcPrice', '제조원가')) as proc, id
+    from public.rows where dataset = 'mfgcost') x
+  where code <> '' and length(ym) = 6 order by code, ym, id desc
+),
+h3 as (
+  select h2.*, mp.proc as proc_u,
+    coalesce(mp.proc, h2.unit_cost) as margin_unit   -- ※ marginUnit = 입고월 ProcPrice(없으면 이전 마지막 월), 그것도 없으면 구매 단가(부대비용 포함)
+  from h2
+  left join lateral (
+    select proc from mfg where mfg.code = upper(public.kj_clean(h2.item_no))
+      and mfg.ym <= (case when length(h2.lot_ym) = 6 then h2.lot_ym else to_char(now(), 'YYYYMM') end)
+    order by mfg.ym desc limit 1
+  ) mp on true
+),
+-- 판매 행별 수익   ※ s._margin = amt − qty × marginUnit
+sr as (
+  select sm.key, sm.qty, public.kj_round(public.kj_num(public.kj_v(sm.d, 'DOMAMT', '판매금액', '원화금액'))) as amt,
+    public.kj_clean(public.kj_v(sm.d, 'BILLDATE', '청구일자', '판매일자', '일자')) as bdate,
+    substr(regexp_replace(coalesce(nullif(sm.d ->> 'BILLDATE', ''), nullif(sm.d ->> '청구일자', ''), nullif(sm.d ->> '판매일자', ''), nullif(sm.d ->> '일자', ''), ''), '[^0-9]', '', 'g'), 1, 6) as bym,
+    h3.margin_unit
+  from sm join h3 on h3.key = sm.key
+),
+stot as (
+  select key, sum(qty) as s_qty, sum(amt) as s_amt, max(bdate) as s_date,
+    (select jsonb_object_agg(bym, v) from (select bym, sum(amt - qty * margin_unit) as v from sr x where x.key = sr.key and length(bym) = 6 group by bym) z) as monthly
+  from sr group by key
+)
+select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vendor, h3.bl_no, h3.lot_no, h3.imp_kind, h3.asset_seq,
+  h3.p_qty, h3.p_amt, h3.alloc_exp, h3.unit_cost, coalesce(st.s_qty, 0), coalesce(st.s_amt, 0), h3.disposal_qty,
+  h3.margin_unit,
+  coalesce(st.s_qty, 0) * h3.margin_unit as cogs,
+  coalesce(st.s_amt, 0) - coalesce(st.s_qty, 0) * h3.margin_unit as margin,
+  round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty, 4) as inv_qty,
+  case when round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty, 4) > 0 then round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty, 4) * h3.unit_cost else 0 end as inv_amt,
+  h3.p_date, coalesce(st.s_date, ''), coalesce(st.monthly, '{}'::jsonb)
+from h3 left join stot st on st.key = h3.key
+$$;
+
+-- 판매 발행월 기준 월 수익   ※ KJHub.results.marginMonthlyByBU / marginMonthlyByDept / marginMonthlyFull  (AssetSeq 36·37 LOT 제외)
+create or replace function public.trade_monthly_margin()
+returns jsonb language sql stable security definer set search_path = public as $$
+  with l as (select * from public.trade_lot_summary() where asset_seq not in ('36', '37')),
+  m as (select trim(l.biz_unit) as bu, trim(l.dept) as dp, e.key as ym, (e.value)::numeric as v from l, jsonb_each(l.monthly) e)
+  select jsonb_build_object(
+    'full',   coalesce((select jsonb_object_agg(ym, v) from (select ym, sum(v) v from m group by ym) a), '{}'::jsonb),
+    'byBU',   coalesce((select jsonb_object_agg(bu, o) from (select bu, jsonb_object_agg(ym, v) o from (select bu, ym, sum(v) v from m where bu <> '' group by bu, ym) b group by bu) c), '{}'::jsonb),
+    'byDept', coalesce((select jsonb_object_agg(dp, o) from (select dp, jsonb_object_agg(ym, v) o from (select dp, ym, sum(v) v from m where dp <> '' group by dp, ym) b group by dp) c), '{}'::jsonb),
+    'lots',   (select count(*) from l)
+  )
+$$;
+
+-- 검증용: LOT 요약을 JSON 배열로
+create or replace function public.trade_lot_summary_json()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) from public.trade_lot_summary() t
+$$;
+
+grant execute on function public.kj_norm(jsonb), public.kj_v(jsonb, text[]), public.kj_clean(text), public.kj_round(numeric),
+  public.trade_lot_summary(), public.trade_monthly_margin(), public.trade_lot_summary_json() to authenticated;
+notify pgrst, 'reload config';

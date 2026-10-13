@@ -1171,6 +1171,7 @@ export default function init() {
             sCust: sRows.map(r => getVal(r, 'CUSTNO') + " " + getVal(r, 'CUSTNAME')).join(' ')
           };
           lotSummaryRows.push({
+            __key: lotKey, // 검증용 (DB 계산의 lot_key 와 같은 규칙)
             bizUnit,
             dept,
             buyer,
@@ -1261,6 +1262,7 @@ export default function init() {
             return nl;
           });
         };
+        try { window.KJHub.lotRows = lotSummaryRows; } catch (e) {} // 검증 화면: 부서 분리 전 LOT 요약 (DB 계산과 대조)
         const expandedRows = [];
         lotSummaryRows.forEach(lo => splitLotByDept(lo).forEach(x => expandedRows.push(x)));
         // 화면 권한: 이 화면(구매 및 판매 현황)은 "구매 내역의 부서" 기준으로 LOT 필터
