@@ -1,7 +1,7 @@
 // KJ Expense — 서비스 워커 (앱 설치용 · 화면 파일 캐시)
 //   · 화면 파일(HTML·JS·CSS·아이콘)만 캐시합니다. 데이터(Supabase)는 절대 캐시하지 않습니다.
 //   · 페이지(HTML)는 항상 서버 우선 → 새 버전을 배포하면 바로 반영, 오프라인일 때만 캐시 사용.
-const CACHE = 'kjhub-shell-v2';
+const CACHE = 'kjhub-shell-v3';
 self.addEventListener('install', e => { self.skipWaiting(); });
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
