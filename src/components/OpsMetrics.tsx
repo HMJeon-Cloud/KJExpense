@@ -28,6 +28,9 @@ type Ops = {
   from: string; to: string; today: string;
   inv: [string, string, string, number, number][];                     // 부서, 사업단위, 구간, 금액, LOT수
   invLots?: InvLot[]; invTop?: InvLot[];
+  invSrc?: 'erp' | 'calc';
+  invGap?: [string, string, string, number, number, number, number][];   // 부서, 품목, LOT, 계산 수량, ERP 수량, 계산 금액, ERP 금액
+  invGapN?: number; invGapAmt?: number;
   sales: [string, string, string, string, number, number][];           // 부서, 년월, 품목, 청구처, 매출, 원가
   pur: [string, string, string, number, number][];                     // 부서, 년월, 수입처, 구매금액, 부대비용
   payee: [string, string, string, number][];                           // 부서, 년월, 지급처, 금액
@@ -298,6 +301,8 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
   const [nItems, setNItems] = useState<Record<string, number>>({});
   const [nLots, setNLots] = useState<Record<string, number>>({});
   const [openCap, setOpenCap] = useState<Record<string, boolean>>({});
+  const [showGap, setShowGap] = useState(false);
+  const [nGap, setNGap] = useState(15);
   // 회사 기준 환율 편집 (관리자)
   const [fxEdit, setFxEdit] = useState<Record<string, string> | null>(null);
   const saveFx = async () => {
@@ -357,6 +362,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
         .ops .ops-rk>span:nth-child(n+3){text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
         .ops .ops-msg{padding:14px;border:1px dashed var(--line-2);border-radius:10px;font-size:13px;color:var(--fg-2);background:var(--surface-2)}
         .ops .ops-more{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+        .ops .ops-gap{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;border-top:1px dashed var(--line-2);padding-top:10px}.ops .ops-gap>.btn{white-space:normal;text-align:left;justify-content:flex-start;height:auto}
         .ops .fxin{width:90px;padding:3px 6px;font-size:12.5px;text-align:right}
         @media (max-width:1000px){.ops .ops-grid{grid-template-columns:1fr}}
         @media (max-width:820px){.ops .ops-card{padding:14px 12px}.ops .ops-kpi b{font-size:18px}.ops .ops-mb-col b{display:none}.ops .ops-rk{grid-template-columns:18px minmax(0,1fr) 84px 46px}.ops .ops-rk>:nth-child(5){display:none}.ops .tbl-wrap td:first-child,.ops .tbl-wrap th:first-child{position:sticky;left:0;z-index:1;background:var(--surface);max-width:140px;box-shadow:1px 0 0 var(--line)}.ops tr.tot td:first-child{background:var(--surface-2)}.ops tr.warn td:first-child{background:#fff5f5}.ops tr.l2 td:first-child,.ops tr.inrow td:first-child{background:#fafbfd}.ops tr.l3 td:first-child{background:#f5f7fb}}
@@ -402,9 +408,9 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
         <div className="ops-card wide">
           <h3><span className="no">2</span>재고 회전일수 · 오래된 재고<HelpDot id="ops.stock" /></h3>
           {!db ? <Loading err={err} /> : <>
-            <p className="lead">{db.turnDays == null ? '최근 3개월 매출원가가 없어 회전일수를 계산할 수 없습니다.' : `지금 재고는 약 ${db.turnDays}일 치 판매량입니다.`} {db.invTotal > 0 ? `입고 후 180일 넘은 재고가 ${kor(db.old180)}(${pct1(db.old180, db.invTotal)}%) 입니다.` : ''} 본부 → 품목 → LOT 순서로 눌러서 펼칩니다.</p>
+            <p className="lead">{db.turnDays == null ? '최근 3개월 매출원가가 없어 회전일수를 계산할 수 없습니다.' : `지금 재고는 약 ${db.turnDays}일 치 판매량입니다.`} {db.invTotal > 0 ? `입고 후 180일 넘은 재고가 ${kor(db.old180)}(${pct1(db.old180, db.invTotal)}%) 입니다.` : ''} {ops?.invSrc === 'erp' ? '재고는 [LOT별 재고] 업로드(ERP 재고) 기준입니다.' : '[LOT별 재고] 업로드가 없어 구매 − 판매 − 폐기 − 생산 투입으로 계산한 재고입니다.'} 본부 → 품목 → LOT 순서로 눌러서 펼칩니다.</p>
             <div className="ops-kpis">
-              <Kpi l="재고금액 (LOT 기준, 지금)" v={kor(db.invTotal)} />
+              <Kpi l={ops?.invSrc === 'erp' ? '재고금액 (ERP · LOT별 재고)' : '재고금액 (계산값)'} v={kor(db.invTotal)} />
               <Kpi l="월평균 매출원가 (최근 3개월)" v={kor(db.avgCogs)} />
               <Kpi l="재고 회전일수" v={db.turnDays == null ? '-' : db.turnDays + '일'} tone={db.turnDays != null && db.turnDays > 180 ? 'neg' : undefined} />
             </div>
@@ -439,6 +445,24 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
                 })}</tbody>
               </table></div>
             </>}
+            {ops?.invSrc === 'erp' && (ops.invGapN || 0) > 0 && (
+              <div className="ops-gap">
+                <button className="btn sm ghost" onClick={() => setShowGap(v => !v)}>{showGap ? '▾' : '▸'} 점검: 구매/판매 계산 재고와 ERP 재고가 다른 LOT {fmt(ops.invGapN || 0)}건 (계산이 {kor(Math.abs(ops.invGapAmt || 0))} {(ops.invGapAmt || 0) >= 0 ? '많음' : '적음'})</button>
+                {showGap && <>
+                  <div className="ops-note">구매/판매 화면의 재고 평가액은 계산값이라 아래 LOT 들 때문에 ERP 재고와 달라집니다. 대개 판매·폐기·생산 투입이 다른 품번이나 다른 LOT 번호로 적혀 있거나, 해당 데이터가 업로드되지 않은 경우입니다. LOT 을 누르면 [집계 검증 › LOT 추적]에서 관련 행을 모두 봅니다.</div>
+                  <div className="tbl-wrap"><table>
+                    <thead><tr><th>LOT</th><th>품목</th><th>{'본부'}</th><th>계산 수량</th><th>ERP 수량</th><th>차이 수량</th><th>계산 금액</th><th>ERP 금액</th></tr></thead>
+                    <tbody>{(ops.invGap || []).slice(0, nGap).map((g, i) => (
+                      <tr key={g[2] + g[1] + i} className={isAdmin ? 'clk' : ''} onClick={() => isAdmin && nav('/settings/verify?lot=' + encodeURIComponent(g[2]))}>
+                        <td>{g[2]}</td><td className="mut" style={{ fontFamily: 'var(--font-body)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }} title={g[1]}>{g[1]}</td><td className="mut" style={{ fontFamily: 'var(--font-body)' }}>{unitOf(g[0])}</td>
+                        <td>{fmt(g[3])}</td><td>{fmt(g[4])}</td><td className={g[3] - g[4] > 0 ? 'neg' : 'pos'}>{sgn(g[3] - g[4])}{fmt(Math.abs(g[3] - g[4]))}</td><td>{fmt(g[5])}</td><td className="mut">{fmt(g[6])}</td>
+                      </tr>))}</tbody>
+                  </table></div>
+                  <More n={Math.min(nGap, (ops.invGap || []).length)} total={(ops.invGap || []).length} step={15} set={setNGap} unit=" LOT" />
+                  {(ops.invGapN || 0) > (ops.invGap || []).length && <div className="ops-note">차이가 큰 순서로 {(ops.invGap || []).length}건만 보입니다.</div>}
+                </>}
+              </div>
+            )}
           </>}
         </div>
 

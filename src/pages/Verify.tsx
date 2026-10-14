@@ -143,6 +143,8 @@ export default function Verify() {
       <div className="vf" style={{ display: 'grid', gap: 16 }}>
         <div className="page-head"><div><h1>집계 검증</h1><div className="help">DB가 계산한 합계(SQL)와 화면 코드가 계산한 합계(JS)를 같은 규칙으로 대조합니다. 모두 ✓이면 DB 집계로 바꿔도 숫자가 바뀌지 않습니다.</div></div></div>
 
+        <LotTrace />
+
         <div className="card"><div className="hd">① 전표 집계 — 불러온 범위 {range ? `(${ymLabel(range.from)} ~ 마감월 이후)` : ''}</div>
           <div style={{ padding: 14, display: 'grid', gap: 12 }}>
             {!agg ? <div className="empty">DB 집계가 없습니다. Supabase에서 <b>0004_aggregates.sql</b>을 실행한 뒤 "다시 불러오기"를 하세요. (지금은 예전 방식 — 전체 원본으로 계산 중)</div> : !win ? <div className="empty"><span className="spinner" /> 전표를 불러오는 중…</div> : (
@@ -237,5 +239,60 @@ function DiffTable({ title, diffs, aLabel, bLabel }: { title: string; diffs: Dif
         <thead><tr><th>부서</th><th>월</th><th>계정</th><th className="n">{aLabel}</th><th className="n">{bLabel}</th><th className="n">차이</th></tr></thead>
         <tbody>{diffs.slice(0, 100).map((d, i) => <tr key={i} className="bad"><td>{d.dept}</td><td>{ymLabel(d.ym)}</td><td>{d.acc}</td><td className="n">{fmt(d.a)}</td><td className="n">{fmt(d.b)}</td><td className="n">{fmt(d.a - d.b)}</td></tr>)}</tbody>
       </table></div></div>
+  );
+}
+
+/** LOT 추적 — LOT 번호 하나로 구매·판매·실자재투입·ERP 재고 행과 계산 결과를 한 번에 (재고가 남아 보이는 이유 찾기) */
+type Trace = Record<string, Record<string, unknown>[]> & { lot?: string; matCols?: string[]; matRows?: number; matLotRows?: number };
+function LotTrace() {
+  const init = (() => { try { return new URLSearchParams(location.hash.split('?')[1] || '').get('lot') || ''; } catch { return ''; } })();
+  const [q, setQ] = useState(init);
+  const [busy, setBusy] = useState(false);
+  const [t, setT] = useState<Trace | null>(null);
+  const [err, setErr] = useState('');
+  const run = async (lot = q) => {
+    if (!lot.trim()) return;
+    setBusy(true); setErr(''); setT(null);
+    const { data, error } = await supabase.rpc('lot_trace', { p_lot: lot.trim() });
+    setBusy(false);
+    if (error) return setErr(/lot_trace|PGRST202|function/i.test(error.message + (error.code || '')) ? 'DB 함수가 없습니다. Supabase SQL Editor 에서 0010_lot_trace.sql 을 실행하세요.' : error.message);
+    setT(data as Trace);
+  };
+  useEffect(() => { if (init) run(init); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const sec: [string, string, string][] = [
+    ['calc', '계산 결과 (LOT + 품번 별)', '구매 − 판매 − 폐기 − 생산 투입 = 재고 수량. 품번이 다르면 다른 줄입니다.'],
+    ['stock', 'ERP 재고 (LOT별 재고 업로드)', '여기에 없는 품번은 ERP 상 재고가 없는 것입니다.'],
+    ['purchase', '구매 행', '품번(Chk) 이 LOT 묶음 기준, 품번은 보조로 씁니다. 수입구분 "폐기" 행은 폐기 수량입니다.'],
+    ['sale', '판매 행', '판매 품번이 구매 품번(Chk)과 같아야 그 LOT 판매로 잡힙니다.'],
+    ['matUsed', '실자재투입 — 이 LOT 이 자재로 쓰인 행', '자재 품번 + 자재 LOT 이 구매와 같아야 재고에서 빠집니다.'],
+    ['matMade', '실자재투입 — 이 LOT 으로 생산된 행', '참고: 이 LOT 번호로 만든 제품'],
+  ];
+  const tbl = (rows: Record<string, unknown>[]) => {
+    if (!rows?.length) return <div className="help" style={{ padding: '4px 8px' }}>없음</div>;
+    const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+    return <div className="tbl-wrap"><table><thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={i}>{cols.map(c => <td key={c}>{r[c] == null ? '' : typeof r[c] === 'number' ? fmt(r[c] as number) : String(r[c])}</td>)}</tr>)}</tbody></table></div>;
+  };
+  const hint = (() => {
+    if (!t) return null;
+    const out: string[] = [];
+    const calc = (t.calc || []) as Record<string, number | string>[];
+    const stockItems = new Set(((t.stock || []) as Record<string, unknown>[]).map(r => String(r['품번'] || '').toUpperCase()));
+    calc.forEach(c => {
+      const inv = Number(c['재고수량']) || 0, it = String(c['품번'] || '').toUpperCase();
+      if (inv > 0.0001 && !stockItems.has(it)) out.push(`${c['품번']}: 계산상 ${fmt(inv)} 남았지만 ERP 재고에는 없습니다.` + (Number(c['생산투입']) ? '' : ' 실자재투입에 이 품번·LOT 이 자재로 쓰인 행이 없습니다.') + (((t.sale || []) as Record<string, unknown>[]).some(s => String(s['품번'] || '').toUpperCase() !== it) ? ' 같은 LOT 의 판매가 다른 품번으로 적혀 있습니다.' : ''));
+    });
+    const mc = (t.matCols || []) as string[]; const mr = Number(t.matRows) || 0, ml = Number(t.matLotRows) || 0;
+    if (mr && !ml) out.push('실자재투입 데이터에 자재 LOT(RealLotNo) 값이 한 줄도 없습니다. 이 값이 있어야 생산에 투입된 원료를 재고에서 뺄 수 있습니다. 실자재투입을 RealLotNo 열을 포함해 다시 업로드해 주세요. (지금 열: ' + mc.join(', ') + ')');
+    else if (mr && ml < mr) out.push(`실자재투입 ${fmt(mr)}행 중 자재 LOT(RealLotNo)이 있는 행은 ${fmt(ml)}행입니다. 비어 있는 행의 투입분은 재고에서 빠지지 않습니다.`);
+    return out;
+  })();
+  return (
+    <div className="card"><div className="hd">LOT 추적 <span className="help" style={{ fontWeight: 400 }}>재고가 남아 보이는 이유를 찾습니다 — LOT 번호로 구매·판매·실자재투입·ERP 재고 행을 모두 봅니다</span></div>
+      <div style={{ padding: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 12 }}>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}><input className="inp" style={{ width: 220, maxWidth: '100%' }} value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') run(); }} placeholder="LOT 번호 (예: SK30580823)" /><button className="btn pri sm" disabled={busy || !q.trim()} onClick={() => run()}>{busy ? '찾는 중…' : '추적'}</button>{err && <span className="help" style={{ color: 'var(--neg)' }}>{err}</span>}</div>
+        {hint && hint.length > 0 && <div style={{ background: '#fff8e6', border: '1px solid #f5d27a', borderRadius: 8, padding: '8px 12px', fontSize: 13, display: 'grid', gap: 4 }}>{hint.map((h, i) => <div key={i}>⚠ {h}</div>)}</div>}
+        {t && sec.map(([k, title, note]) => <div key={k}><div style={{ fontWeight: 700, fontSize: 13 }}>{title} <span className="help" style={{ fontWeight: 400 }}>· {note}</span></div>{tbl((t[k] || []) as Record<string, unknown>[])}</div>)}
+      </div>
+    </div>
   );
 }

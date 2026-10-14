@@ -1,7 +1,10 @@
 -- 운영 지표 (수익/비용 › 운영 지표 화면)   ※ 0006 을 다시 실행한 다음 실행 (판매 행에 청구처 cu 추가됨)
 --   ops_metrics(p_from, p_to) : 조회 기간(YYYYMM~YYYYMM)의 아래 묶음을 한 번에 돌려줍니다.
---     inv    : 지금 남은 LOT 재고  [부서, 사업단위, 입고 후 경과 구간, 재고금액, LOT 수]
---     invLots: 재고가 남은 LOT 전부  [부서, 사업단위, 품목, LOT, 입고일, 마지막 판매일, 재고수량, 재고금액, 경과일]  (화면: 본부 › 품목 › LOT 펼치기)
+--     inv    : 지금 남은 LOT 재고  [부서, 사업장, 입고 후 경과 구간, 재고금액, LOT 수]
+--     invLots: 재고가 남은 LOT 전부  [부서, 사업장, 품목, LOT, 입고일, 마지막 판매일, 재고수량, 재고금액, 경과일]  (화면: 본부 › 품목 › LOT 펼치기)
+--     invSrc : 'erp' = [LOT별 재고] 업로드(ERP 재고) 기준 / 'calc' = LOT별 재고가 없어 구매−판매−폐기−생산투입 계산값
+--     invGap : 계산 재고와 ERP 재고가 다른 LOT  [부서, 품목, LOT, 계산 수량, ERP 수량, 계산 금액, ERP 금액]  (데이터 점검용)
+--       ※ ERP 재고의 부서 = 같은 LOT·품번의 구매 부서 → 없으면 그 품번의 최근 구매 부서 → 없으면 같은 LOT 의 구매 부서
 --     sales  : 판매 발행월 기준 [부서, 년월, 품목, 청구처, 판매금액, 매출원가]           (매출원가 = 판매수량 × LOT 원가 단가)
 --     pur    : 입고월 기준 [부서, 년월, 수입처, 구매금액, 배분 부대비용]
 --     payee  : 부대비용 청구월 기준 [부서, 년월, 지급처, 금액]
@@ -15,18 +18,64 @@ language sql immutable as $$ select substr(regexp_replace(coalesce(p, ''), '[^0-
 create or replace function public.ops_metrics(p_from text, p_to text)
 returns jsonb language sql stable security definer set search_path = public set jit = off as $$
 with
-l as materialized (select * from public.trade_lot_summary() where asset_seq not in ('36', '37')),
--- ① 재고 (지금 시점)
-iv as materialized (
+la as materialized (select * from public.trade_lot_summary()),   -- 한 번만 계산
+l as materialized (select * from la where asset_seq not in ('36', '37')),
+-- ① 재고 (지금 시점) — ERP 재고(LOT별 재고 업로드)가 있으면 그것이 기준, 없으면 계산값
+st0 as materialized (
+  select public.kj_norm(data) as d from public.rows where dataset = 'stock'
+),
+st as materialized (
+  select coalesce(nullif(public.kj_clean(public.kj_v(d, 'BIZNAME', '사업장')), ''), '(미지정)') as biz,
+    public.kj_clean(public.kj_v(d, 'ITEMNO', '품번')) as item_no,
+    upper(public.kj_clean(public.kj_v(d, 'ITEMNO', '품번'))) as item_u,
+    public.kj_clean(public.kj_v(d, 'ITEMNAME', '품명')) as item_name,
+    public.kj_clean(public.kj_v(d, 'LOTNO', '제조번호')) as lot_no,
+    upper(public.kj_clean(public.kj_v(d, 'LOTNO', '제조번호'))) as lot_u,
+    public.kj_ymd(public.kj_v(d, 'REGDATE', '입고일')) as reg,
+    public.kj_num(public.kj_v(d, 'STOCKQTY', '수량')) as qty,
+    public.kj_num(public.kj_v(d, 'STOCKAMT', '재고금액')) as amt
+  from st0
+),
+use_erp as (select exists (select 1 from st) as yes),
+-- 계산 LOT 의 (LOT, 품번) 색인 — 구매 보조 품번(ItemNo)까지
+lk as materialized (
+  select upper(public.kj_clean(lot_no)) as lot_u, upper(public.kj_clean(item_no)) as item_u, lot_key, dept, s_date from la where lot_no not in ('', '-')
+),
+item_dept as materialized (select distinct on (upper(public.kj_clean(item_no))) upper(public.kj_clean(item_no)) as item_u, dept from la where dept <> '' order by upper(public.kj_clean(item_no)), p_date desc),
+lot_dept as materialized (select distinct on (upper(public.kj_clean(lot_no))) upper(public.kj_clean(lot_no)) as lot_u, dept from la where lot_no not in ('', '-') order by upper(public.kj_clean(lot_no)), p_date desc),
+erp as materialized (
+  select coalesce(k.dept, idp.dept, ldp.dept, '미지정 부서') as dept, st.biz as biz_unit, st.item_no, st.item_name, st.lot_no,
+    st.reg as p_date, coalesce(k.s_date, '') as s_date, st.qty as inv_qty, st.amt as inv_amt,
+    case when length(st.reg) = 8 then (current_date - to_date(st.reg, 'YYYYMMDD')) end as age
+  from st
+  left join lateral (select dept, s_date from lk where lk.lot_u = st.lot_u and lk.item_u = st.item_u limit 1) k on true
+  left join item_dept idp on idp.item_u = st.item_u
+  left join lot_dept ldp on ldp.lot_u = st.lot_u
+  where st.amt > 0 or st.qty > 0
+),
+calc as materialized (
   select dept, biz_unit, item_no, item_name, lot_no, p_date, s_date, inv_qty, inv_amt,
     case when length(public.kj_ymd(p_date)) = 8 then (current_date - to_date(public.kj_ymd(p_date), 'YYYYMMDD')) end as age
   from l where inv_amt > 0
+),
+iv as materialized (
+  select * from erp where (select yes from use_erp)
+  union all
+  select * from calc where not (select yes from use_erp)
 ),
 inv as (
   select dept, biz_unit,
     case when age is null then '미상' when age <= 90 then '0-90' when age <= 180 then '91-180' when age <= 365 then '181-365' else '365+' end as bk,
     sum(inv_amt) as amt, count(*) as n
   from iv group by 1, 2, 3
+),
+-- 계산 재고 ↔ ERP 재고 차이 (같은 LOT·품번끼리)
+stk as (select lot_u, item_u, sum(qty) as qty, sum(amt) as amt from st group by 1, 2),
+gap as materialized (
+  select c.dept, c.item_name || ' (' || c.item_no || ')' as item, c.lot_no, c.inv_qty as cq, coalesce(k.qty, 0) as eq, c.inv_amt as ca, coalesce(k.amt, 0) as ea
+  from (select * from l where inv_qty > 0.0001 and lot_no not in ('', '-')) c
+  left join stk k on k.lot_u = upper(public.kj_clean(c.lot_no)) and k.item_u = upper(public.kj_clean(c.item_no))
+  where (select yes from use_erp) and abs(c.inv_qty - coalesce(k.qty, 0)) > 0.0001
 ),
 -- ② 판매 (청구처·품목별 매출과 원가)
 sl as (
@@ -87,6 +136,10 @@ select jsonb_build_object(
   'from', p_from, 'to', p_to, 'today', to_char(current_date, 'YYYYMMDD'),
   'inv',    coalesce((select jsonb_agg(jsonb_build_array(dept, biz_unit, bk, round(amt), n)) from inv), '[]'::jsonb),
   'invLots', coalesce((select jsonb_agg(jsonb_build_array(dept, biz_unit, item_name || ' (' || item_no || ')', lot_no, p_date, s_date, inv_qty, round(inv_amt), age) order by inv_amt desc) from iv), '[]'::jsonb),
+  'invSrc', case when (select yes from use_erp) then 'erp' else 'calc' end,
+  'invGap', coalesce((select jsonb_agg(jsonb_build_array(dept, item, lot_no, cq, eq, round(ca), round(ea)) order by ca - ea desc) from (select * from gap order by abs(ca - ea) desc limit 500) g), '[]'::jsonb),
+  'invGapN', (select count(*) from gap),
+  'invGapAmt', coalesce((select round(sum(ca - ea)) from gap), 0),
   'sales',  coalesce((select jsonb_agg(jsonb_build_array(dept, ym, item, cust, amt, round(cogs, 2))) from sales), '[]'::jsonb),
   'pur',    coalesce((select jsonb_agg(jsonb_build_array(dept, ym, vendor, p_amt, alloc)) from pur), '[]'::jsonb),
   'payee',  coalesce((select jsonb_agg(jsonb_build_array(dept, ym, payee, amt)) from payee), '[]'::jsonb),
