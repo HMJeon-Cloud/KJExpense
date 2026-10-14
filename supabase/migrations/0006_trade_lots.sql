@@ -240,7 +240,7 @@ alter table public.calc_cache enable row level security;   -- 화면에서 직�
 drop table if exists public.lot_cache cascade;
 create table public.lot_cache as select * from public.trade_lot_summary_raw() with no data;
 alter table public.lot_cache enable row level security;
-delete from public.calc_cache;   -- 이 파일을 다시 실행하면 저장된 결과를 모두 버리고 새로 계산
+delete from public.calc_cache where true;   -- 이 파일을 다시 실행하면 저장된 결과를 모두 버리고 새로 계산
 
 -- 데이터 버전: 데이터셋별 행 수 + 마지막 행 번호 — 업로드·삭제하면 바뀜
 create or replace function public.kj_data_ver() returns text
@@ -269,7 +269,7 @@ begin
   if exists (select 1 from public.calc_cache where key = 'lot_cache' and ver = v) then return v; end if;
   perform pg_advisory_xact_lock(hashtext('kj_lot_cache'));
   if exists (select 1 from public.calc_cache where key = 'lot_cache' and ver = v) then return v; end if;
-  delete from public.lot_cache;
+  delete from public.lot_cache where true;   -- ※ Supabase 는 WHERE 없는 DELETE 를 막으므로 where true
   insert into public.lot_cache select * from public.trade_lot_summary_raw();
   delete from public.calc_cache where key <> 'lot_cache';            -- LOT 이 바뀌면 그 위의 결과도 모두 새로
   perform public.kj_cache_put('lot_cache', v, jsonb_build_object('lots', (select count(*) from public.lot_cache)));
