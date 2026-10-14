@@ -33,8 +33,12 @@ create or replace function public.kj_round(x numeric) returns numeric
 language sql immutable as $$ select floor(x + 0.5) $$;
 
 -- LOT 요약   ※ trade.js processData → lotSummaryRows (부서 분리 전)
+-- ※ 속도: 이 계산(원본 행 → LOT 요약)은 무겁기 때문에 결과를 표 lot_cache 에 저장해 두고,
+--   데이터(구매·판매·부대비용·제조원가·실자재투입·합성·재고)가 바뀌었을 때만 다시 계산합니다 (아래 ensure_lot_cache).
+--   trade_lot_summary() 는 그 저장된 표를 읽고, 실제 계산은 trade_lot_summary_raw() 입니다.
 drop function if exists public.trade_lot_summary() cascade;
-create or replace function public.trade_lot_summary()
+drop function if exists public.trade_lot_summary_raw() cascade;
+create or replace function public.trade_lot_summary_raw()
 returns table (
   lot_key text, biz_unit text, dept text, buyer text, item_no text, item_name text, vendor text, bl_no text, lot_no text, imp_kind text, asset_seq text,
   p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric, mat_qty numeric,
@@ -229,8 +233,54 @@ select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vend
 from h3 left join stot st on st.key = h3.key
 $$;
 
+-- ═══ 계산 결과 저장(캐시) ═══
+--   calc_cache : 이름 → (데이터 버전, 결과)   ·   lot_cache : LOT 요약 표 (trade_lot_summary_raw 결과 그대로)
+create table if not exists public.calc_cache (key text primary key, ver text not null, value jsonb, updated_at timestamptz not null default now());
+alter table public.calc_cache enable row level security;   -- 화면에서 직접 읽지 못함 (아래 함수로만)
+drop table if exists public.lot_cache cascade;
+create table public.lot_cache as select * from public.trade_lot_summary_raw() with no data;
+alter table public.lot_cache enable row level security;
+delete from public.calc_cache;   -- 이 파일을 다시 실행하면 저장된 결과를 모두 버리고 새로 계산
+
+-- 데이터 버전: 데이터셋별 행 수 + 마지막 행 번호 — 업로드·삭제하면 바뀜
+create or replace function public.kj_data_ver() returns text
+language sql stable security definer set search_path = public as $$
+  select 'v1|' || coalesce((select string_agg(dataset || ':' || n || ':' || mx, ',' order by dataset)
+    from (select dataset, count(*) as n, max(id) as mx from public.rows
+          where dataset in ('purchase', 'sale', 'expense', 'mfgcost', 'matinput', 'synth', 'stock') group by dataset) x), '')
+$$;
+-- 설정 버전 (판매가 설정 등이 바뀌면 이윤 결과를 다시 계산)
+create or replace function public.kj_cfg_ver(p_key text) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce((select to_char(updated_at, 'YYYYMMDDHH24MISSUS') from public.config where key = p_key), '-')
+$$;
+create or replace function public.kj_cached(p_key text, p_ver text) returns jsonb
+language sql stable security definer set search_path = public as $$ select value from public.calc_cache where key = p_key and ver = p_ver $$;
+create or replace function public.kj_cache_put(p_key text, p_ver text, p_value jsonb) returns void
+language sql volatile security definer set search_path = public as $$
+  insert into public.calc_cache(key, ver, value, updated_at) values (p_key, p_ver, p_value, now())
+  on conflict (key) do update set ver = excluded.ver, value = excluded.value, updated_at = now()
+$$;
+-- LOT 요약 표가 최신인지 확인하고, 아니면 다시 계산 (동시에 여러 명이 들어와도 한 번만)
+create or replace function public.ensure_lot_cache() returns text
+language plpgsql volatile security definer set search_path = public set jit = off as $$
+declare v text := public.kj_data_ver();
+begin
+  if exists (select 1 from public.calc_cache where key = 'lot_cache' and ver = v) then return v; end if;
+  perform pg_advisory_xact_lock(hashtext('kj_lot_cache'));
+  if exists (select 1 from public.calc_cache where key = 'lot_cache' and ver = v) then return v; end if;
+  delete from public.lot_cache;
+  insert into public.lot_cache select * from public.trade_lot_summary_raw();
+  delete from public.calc_cache where key <> 'lot_cache';            -- LOT 이 바뀌면 그 위의 결과도 모두 새로
+  perform public.kj_cache_put('lot_cache', v, jsonb_build_object('lots', (select count(*) from public.lot_cache)));
+  return v;
+end $$;
+-- 저장된 LOT 요약 (다른 계산 함수들은 이것을 씀 — 호출 전에 ensure_lot_cache() 가 불려 있어야 최신)
+create or replace function public.trade_lot_summary() returns setof public.lot_cache
+language sql stable security definer set search_path = public as $$ select * from public.lot_cache $$;
+
 -- 판매 발행월 기준 월 수익   ※ KJHub.results.marginMonthlyByBU / marginMonthlyByDept / marginMonthlyFull  (AssetSeq 36·37 LOT 제외)
-create or replace function public.trade_monthly_margin()
+create or replace function public.trade_monthly_margin_q()
 returns jsonb language sql stable security definer set search_path = public as $$
   with l as (select * from public.trade_lot_summary() where asset_seq not in ('36', '37')),
   m as (select trim(l.biz_unit) as bu, trim(l.dept) as dp, e.key as ym, (e.value)::numeric as v from l, jsonb_each(l.monthly) e)
@@ -244,10 +294,24 @@ $$;
 
 -- 검증용: LOT 요약을 JSON 배열로
 create or replace function public.trade_lot_summary_json()
-returns jsonb language sql stable security definer set search_path = public as $$
-  select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) from public.trade_lot_summary() t
-$$;
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+begin
+  perform public.ensure_lot_cache();
+  return (select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) from public.lot_cache t);
+end $$;
+
+-- 화면이 부르는 함수: 저장된 결과가 최신이면 그대로, 아니면 계산 후 저장
+create or replace function public.trade_monthly_margin()
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare v text; r jsonb;
+begin
+  v := public.ensure_lot_cache();
+  r := public.kj_cached('monthly', v);
+  if r is null then r := public.trade_monthly_margin_q(); perform public.kj_cache_put('monthly', v, r); end if;
+  return r;
+end $$;
 
 grant execute on function public.kj_norm(jsonb), public.kj_v(jsonb, text[]), public.kj_clean(text), public.kj_round(numeric),
-  public.trade_lot_summary(), public.trade_monthly_margin(), public.trade_lot_summary_json() to authenticated;
+  public.trade_lot_summary(), public.trade_lot_summary_raw(), public.trade_monthly_margin(), public.trade_monthly_margin_q(), public.trade_lot_summary_json(),
+  public.kj_data_ver(), public.kj_cfg_ver(text), public.kj_cached(text, text), public.kj_cache_put(text, text, jsonb), public.ensure_lot_cache() to authenticated;
 notify pgrst, 'reload config';

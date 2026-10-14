@@ -15,7 +15,7 @@
 create or replace function public.kj_ymd(p text) returns text
 language sql immutable as $$ select substr(regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g'), 1, 8) $$;
 
-create or replace function public.ops_metrics(p_from text, p_to text)
+create or replace function public.ops_metrics_q(p_from text, p_to text)
 returns jsonb language sql stable security definer set search_path = public set jit = off as $$
 with
 la as materialized (select * from public.trade_lot_summary()),   -- 한 번만 계산
@@ -147,5 +147,15 @@ select jsonb_build_object(
 )
 $$;
 
-grant execute on function public.kj_ymd(text), public.ops_metrics(text, text) to authenticated;
+-- 화면이 부르는 함수: 같은 기간·같은 데이터면 저장된 결과 (0006 의 캐시 사용)
+create or replace function public.ops_metrics(p_from text, p_to text)
+returns jsonb language plpgsql volatile security definer set search_path = public set jit = off as $$
+declare v text; k text := 'ops|' || p_from || '|' || p_to; r jsonb;
+begin
+  v := public.ensure_lot_cache() || '|' || current_date;   -- 재고 경과일이 날마다 바뀌므로 날짜도
+  r := public.kj_cached(k, v);
+  if r is null then r := public.ops_metrics_q(p_from, p_to); perform public.kj_cache_put(k, v, r); end if;
+  return r;
+end $$;
+grant execute on function public.kj_ymd(text), public.ops_metrics(text, text), public.ops_metrics_q(text, text) to authenticated;
 notify pgrst, 'reload config';

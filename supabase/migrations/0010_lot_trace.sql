@@ -1,6 +1,6 @@
 -- LOT 추적 (설정 › 집계 검증 › LOT 추적) — LOT 번호 하나로 모든 데이터의 관련 행과 계산 결과를 한 번에 봅니다.   (0006 다음에 실행)
 --   재고가 남아 보이는 이유(판매·폐기·생산 투입이 품번이 달라 안 맞는 경우 등)를 찾는 점검용입니다.
-create or replace function public.lot_trace(p_lot text)
+create or replace function public.lot_trace_q(p_lot text)
 returns jsonb language sql stable security definer set search_path = public set jit = off as $$
 with q as (select upper(public.kj_clean(p_lot)) as lot),
 r as materialized (
@@ -43,5 +43,8 @@ select jsonb_build_object(
     from public.trade_lot_summary() t where upper(public.kj_clean(t.lot_no)) = (select lot from q)), '[]'::jsonb)
 )
 $$;
-grant execute on function public.lot_trace(text) to authenticated;
+create or replace function public.lot_trace(p_lot text)
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+begin perform public.ensure_lot_cache(); return public.lot_trace_q(p_lot); end $$;
+grant execute on function public.lot_trace(text), public.lot_trace_q(text) to authenticated;
 notify pgrst, 'reload config';

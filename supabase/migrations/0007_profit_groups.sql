@@ -11,7 +11,7 @@ language sql immutable as $$ select floor(x + 0.5)::numeric $$;
 create or replace function public.kj_nz(p text) returns text
 language sql immutable as $$ select upper(regexp_replace(coalesce(p, ''), '\s+', '', 'g')) $$;
 
-create or replace function public.trade_profit_groups()
+create or replace function public.trade_profit_groups_q()
 returns jsonb language sql stable security definer set search_path = public set enable_nestloop = off set jit = off as $$
 with
 cur as (select to_char(now(), 'YYYYMM') as ym),
@@ -139,5 +139,15 @@ keys as (select unnest(array['ops', 'globalpur', 'salessup', 'synth', 'sales', '
 select jsonb_object_agg(keys.k, coalesce((select jsonb_object_agg(ym, v) from agg where agg.k = keys.k), '{}'::jsonb)) from keys
 $$;
 
-grant execute on function public.kj_nz(text), public.kj_jsround(float8), public.trade_profit_groups() to authenticated;
+-- 화면이 부르는 함수: LOT 요약·판매가 설정이 그대로면 저장된 결과를 바로 돌려줌 (0006 의 캐시 사용)
+create or replace function public.trade_profit_groups()
+returns jsonb language plpgsql volatile security definer set search_path = public set enable_nestloop = off set jit = off as $$
+declare v text; r jsonb;
+begin
+  v := public.ensure_lot_cache() || '|items:' || public.kj_cfg_ver('items');
+  r := public.kj_cached('profit_groups', v);
+  if r is null then r := public.trade_profit_groups_q(); perform public.kj_cache_put('profit_groups', v, r); end if;
+  return r;
+end $$;
+grant execute on function public.kj_nz(text), public.kj_jsround(float8), public.trade_profit_groups(), public.trade_profit_groups_q() to authenticated;
 notify pgrst, 'reload config';
