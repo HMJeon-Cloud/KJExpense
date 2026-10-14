@@ -9,13 +9,15 @@ import { fmt } from './ui';
 import { HelpDot } from './Help';
 import { ListHead } from './ListHead';
 import { kor, ymL, C } from './charts';
+import { useAuth } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
 
 export type OpsDeptRow = {
   d: string; hq: string; margin: number[]; cost: number[]; emp: number;
-  empSer?: number[]; inSer?: number[]; outSer?: number[]; vCost?: number[]; fixed?: number[]; fixedAcc?: Record<string, number[]>;
+  empSer?: number[]; inSer?: number[]; outSer?: number[]; vCost?: number[];
 };
 export type OpsModel = {
-  months: string[]; cur: string; realized: boolean; deptLevel: boolean; allow?: string[] | null; fixedRule?: string;
+  months: string[]; cur: string; realized: boolean; deptLevel: boolean; allow?: string[] | null;
   series: { margin: number[] }; deptRows: OpsDeptRow[];
 };
 
@@ -42,6 +44,20 @@ function loadOps(from: string, to: string) {
     })());
   }
   return cache.get(k)!;
+}
+
+// 고정비 (설정 › 고정비 설정 기준, DB fixed_cost_agg) — 설정을 저장하면 비움
+type Fixed = { configured: boolean; rows: [string, string, string, number][] };   // 부서, 년월, 계정, 금액
+const fcache = new Map<string, Promise<Fixed | { error: string }>>();
+if (typeof window !== 'undefined') { window.addEventListener('kjhub:uploaded', () => fcache.clear()); window.addEventListener('kjhub:fixedsaved', () => fcache.clear()); }
+function loadFixed(from: string, to: string) {
+  const k = from + '|' + to;
+  if (!fcache.has(k)) fcache.set(k, (async () => {
+    const { data, error } = await supabase.rpc('fixed_cost_agg', { p_from: from, p_to: to });
+    if (error) { fcache.delete(k); return { error: /fixed_cost_agg|function|PGRST202/i.test(error.message + (error.code || '')) ? 'NOFN' : error.message }; }
+    return data as Fixed;
+  })());
+  return fcache.get(k)!;
 }
 
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
@@ -104,10 +120,20 @@ export function OpsMetrics({ model }: { model: OpsModel }) {
   const [ops, setOps] = useState<Ops | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
-  useEffect(() => { const h = () => setTick(t => t + 1); window.addEventListener('kjhub:uploaded', h); return () => window.removeEventListener('kjhub:uploaded', h); }, []);
+  useEffect(() => { const h = () => setTick(t => t + 1); window.addEventListener('kjhub:uploaded', h); window.addEventListener('kjhub:fixedsaved', h); return () => { window.removeEventListener('kjhub:uploaded', h); window.removeEventListener('kjhub:fixedsaved', h); }; }, []);
+  const [fxd, setFxd] = useState<Fixed | null>(null);
+  const [fxErr, setFxErr] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true; setFxErr(null);
+    loadFixed(from, to).then(r => { if (!alive) return; if (!r || 'error' in r) { setFxErr(r ? r.error : '빈 응답'); setFxd(null); } else setFxd(r); });
+    return () => { alive = false; };
+  }, [from, to, tick]);
+  const { employee } = useAuth();
+  const isAdmin = employee?.role === 'admin';
+  const nav = useNavigate();
   useEffect(() => {
     let alive = true; setErr(null);
-    loadOps(from, to).then(r => { if (!alive) return; if ('error' in r) { setErr(r.error); setOps(null); } else setOps(r); });
+    loadOps(from, to).then(r => { if (!alive) return; if (!r || 'error' in r) { setErr(r ? r.error : '빈 응답'); setOps(null); } else setOps(r); });
     return () => { alive = false; };
   }, [from, to, tick]);
 
@@ -143,13 +169,16 @@ export function OpsMetrics({ model }: { model: OpsModel }) {
   // ── ⑥ 고정비 대비 수익 ──
   const fixed = useMemo(() => {
     const rev = model.allow == null ? model.series.margin.slice() : months.map((_, i) => sum(model.deptRows.map(r => r.margin[i] || 0)));
-    const fx = months.map((_, i) => sum(model.deptRows.map(r => (r.fixed || [])[i] || 0)));
     const vc = months.map((_, i) => sum(model.deptRows.map(r => (r.vCost || [])[i] || 0)));
+    // 고정비는 화면의 비용과 같은 부서 범위(위 현황 표의 부서)만
+    const inRows = new Set(model.deptRows.map(r => r.d));
+    const mi: Record<string, number> = {}; months.forEach((m, i) => { mi[m] = i; });
+    const fx = months.map(() => 0);
     const accs: Record<string, number> = {};
-    model.deptRows.forEach(r => Object.entries(r.fixedAcc || {}).forEach(([a, ser]) => { accs[a] = (accs[a] || 0) + (ser[ci] || 0); }));
+    (fxd?.rows || []).forEach(([d, ym, a, v]) => { const i = mi[ym]; if (i == null || !inRows.has(d)) return; fx[i] += +v; if (i === ci) accs[a] = (accs[a] || 0) + +v; });
     const accList = Object.entries(accs).filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
     return { rev, fx, vc, accList, cover: months.map((_, i) => (fx[i] > 0 ? Math.round(rev[i] / fx[i] * 1000) / 10 : null)) };
-  }, [model.deptRows, model.series.margin, model.allow, months, ci]);
+  }, [model.deptRows, model.series.margin, model.allow, months, ci, fxd]);
 
   // ── DB 묶음 (②③④⑤⑦) ──
   const db = useMemo(() => {
@@ -417,7 +446,10 @@ export function OpsMetrics({ model }: { model: OpsModel }) {
         {/* ⑥ 고정비 대비 수익 */}
         <div className="ops-card">
           <h3><span className="no">6</span>고정비 대비 수익<HelpDot id="ops.fixed" /></h3>
-          {(() => {
+          {fxErr ? <div className="ops-msg">{fxErr === 'NOFN' ? '고정비 계산 DB 함수가 필요합니다. 관리자가 Supabase SQL Editor 에서 0009_fixed_cost.sql 을 실행하면 표시됩니다.' : '고정비를 불러오지 못했습니다: ' + fxErr}</div>
+            : !fxd ? <Loading err={null} />
+            : !fxd.configured ? <div className="ops-msg">아직 고정비 기준이 정해지지 않았습니다. {isAdmin ? <>관리자가 <button className="btn sm" onClick={() => nav('/settings/fixed')}>고정비 설정 →</button> 에서 계정·적요를 고르면 표시됩니다.</> : '관리자에게 [설정 › 고정비 설정]을 요청하세요.'}</div>
+            : (() => {
             const c = fixed.cover[ci], gap = fixed.rev[ci] - fixed.fx[ci];
             return <>
               <p className="lead">{fixed.fx[ci] > 0 ? (gap >= 0 ? `${curL} 수익이 고정비를 ${c}% 덮었습니다. 고정비를 내고 ${kor(gap)} 남았습니다.` : `${curL} 수익이 고정비의 ${c}% 입니다. 고정비만으로 ${kor(-gap)} 모자랍니다.`) : '기준월 고정성 비용이 없습니다.'}</p>
@@ -431,6 +463,7 @@ export function OpsMetrics({ model }: { model: OpsModel }) {
                 <ListHead cls="ops-rk" cols={['', `${curL} 고정비 계정`, '>금액', '>비중', '']} />
                 {fixed.accList.slice(0, 8).map(([a, v], i) => <div key={a} className="ops-rk"><span className="help">{i + 1}</span><span className="nm">{a.replace(/^\((판|제)\)/, '')}</span><span>{fmt(v)}</span><span className="mut">{pct1(v, fixed.fx[ci]) ?? '-'}%</span><span /></div>)}
               </div>}
+              {isAdmin && <div className="ops-note">고정비 기준: [설정 › 고정비 설정] <button className="btn sm ghost" style={{ padding: '1px 8px' }} onClick={() => nav('/settings/fixed')}>바꾸기 →</button></div>}
             </>;
           })()}
         </div>

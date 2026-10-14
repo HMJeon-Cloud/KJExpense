@@ -704,8 +704,6 @@ export default function init() {
   //   DeptName / WorkDate(년월) / EmpCnt(부서인원) / InEmpCnt(입사) / OutEmpCnt(퇴사)
   let _hcCache = null,
     _hcSrc = null;
-  // 고정성 비용으로 보는 계정 (운영 지표 · 고정비 대비 수익) — 계정과목 이름에 아래 단어가 들어가면 고정비
-  const FIXED_RE = /급여|상여|퇴직|복리후생|임차료|감가상각|상각비|보험료|리스료|통신비|수도광열|세금과공과/;
   function headcountData() {
     const rows = hub().data && hub().data.headcount;
     if (!rows) return { byDept: {}, latest: {} };
@@ -1773,7 +1771,7 @@ export default function init() {
         const zeros = () => months.map(() => 0);
         const model = {
           id: 'bu-margin' + SUF, realized: REALIZED, deptLevel: DEPT_LEVEL, months, cur, prev,
-          allow: buDepts(), fixedRule: FIXED_RE.source,
+          allow: buDepts(),
           kpi: { tMargin: dispTMargin, curMargin, prevMargin, tCost, curCost, prevCost, usage, allocTotal },
           series: { margin: dispMarginSeries, cost: totalCostSeries, supAlloc: REALIZED ? zeros() : supAllocSeriesBU, supCost: REALIZED ? zeros() : supCostSeriesBU },
           hqCards: hqShowMargin.map(hq => { const s2 = hqAllocSeries[hq] || zeros(); const sum = s2.reduce((x, y) => x + y, 0); return { hq, series: s2, sum, cur: s2[s2.length - 1] || 0, prev: s2.length > 1 ? s2[s2.length - 2] : 0, share: DEPT_LEVEL ? null : pct(sum, allocTotal) }; }),
@@ -1806,14 +1804,11 @@ export default function init() {
               const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[d] || {})[m] || 0) : ser;
               const costSer = months.map(m => ((dm[d] && dm[d][m]) || 0) + (REALIZED ? 0 : supportRecv(d, m)));
               const rec = (hc.byDept[norm(d)] || {})[cur];
-              // 운영 지표용: 월별 인원·입퇴사, 전표 비용, 고정성 비용(계정 기준)
+              // 운영 지표용: 월별 인원·입퇴사, 전표 비용   (고정비는 설정 › 고정비 설정 기준으로 DB 가 계산)
               const hcd = hc.byDept[norm(d)] || {};
-              const accM = (agg.deptMonthAcc && agg.deptMonthAcc[d]) || {};
-              const fixedAcc = {};
-              const fixedSer = months.map((m, i) => { let t = 0; const per = accM[m] || {}; for (const a in per) { if (FIXED_RE.test(a)) { t += per[a]; (fixedAcc[a] = fixedAcc[a] || months.map(() => 0))[i] += per[a]; } } return t; });
               rows.push({ d, hq: hqm[norm(d)] || '기타', margin: use, cost: costSer, emp: rec ? rec.emp : 0,
                 empSer: months.map(m => (hcd[m] ? hcd[m].emp : 0)), inSer: months.map(m => (hcd[m] ? hcd[m].in : 0)), outSer: months.map(m => (hcd[m] ? hcd[m].out : 0)),
-                vCost: months.map(m => (dm[d] && dm[d][m]) || 0), fixed: fixedSer, fixedAcc });
+                vCost: months.map(m => (dm[d] && dm[d][m]) || 0) });
             };
             deptList.forEach(push);
             amap.forEach((ent, d) => { if (deptAllowed(d)) push(d); });

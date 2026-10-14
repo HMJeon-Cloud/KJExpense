@@ -1,3 +1,4 @@
+import FixedCostSettings from './pages/FixedCostSettings';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
@@ -56,6 +57,7 @@ function Gate() {
         <Route path="/settings/items" element={isAdmin ? <AllocPrices kind="items" /> : <Navigate to="/" />} />
         <Route path="/settings/materials" element={isAdmin ? <AllocPrices kind="mats" /> : <Navigate to="/" />} />
         <Route path="/settings/support" element={<SupportSettings />} />
+        <Route path="/settings/fixed" element={isAdmin ? <FixedCostSettings /> : <Navigate to="/" />} />
         <Route path="*" element={<LegacyOrPlaceholder isAdmin={isAdmin} />} />
       </Route>
     </Routes>
