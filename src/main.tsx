@@ -1,3 +1,5 @@
+import Ops from './pages/Ops';
+import CostAllocSettings from './pages/CostAllocSettings';
 import FixedCostSettings from './pages/FixedCostSettings';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -48,6 +50,7 @@ function Gate() {
         <Route path="/bu-real" element={<BuDashboard variant="-real" title="국전 수익/비용 (실현 수익)" />} />
         <Route path="/bu-unit" element={<BuDashboard variant="-my" title="사업단위 수익/비용" />} />
         <Route path="/dept" element={<DeptDashboard />} />
+        <Route path="/ops" element={<Ops />} />
         <Route path="/dept-cost" element={<DeptCost />} />
         <Route path="/trade" element={<Trade />} />
         <Route path="/matinput" element={<MatInput />} />
@@ -58,6 +61,7 @@ function Gate() {
         <Route path="/settings/materials" element={isAdmin ? <AllocPrices kind="mats" /> : <Navigate to="/" />} />
         <Route path="/settings/support" element={<SupportSettings />} />
         <Route path="/settings/fixed" element={isAdmin ? <FixedCostSettings /> : <Navigate to="/" />} />
+        <Route path="/settings/cost-alloc" element={isAdmin ? <CostAllocSettings /> : <Navigate to="/" />} />
         <Route path="*" element={<LegacyOrPlaceholder isAdmin={isAdmin} />} />
       </Route>
     </Routes>

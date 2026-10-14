@@ -16,6 +16,7 @@ export const SCREENS: { group: string; items: { path: string; title: string; adm
     { path: '/dept', title: '부서별 수익/비용' },
     { path: '/dept-cost', title: '부서별 비용' },
     { path: '/dept-support', title: '부서별 지원 내역' },
+    { path: '/ops', title: '운영 지표', privileged: true },
   ]},
   { group: '구매/판매', items: [
     { path: '/trade', title: '구매/판매' },
@@ -27,6 +28,7 @@ export const SCREENS: { group: string; items: { path: string; title: string; adm
     { path: '/settings/items', title: '품목', admin: true },
     { path: '/settings/materials', title: '원자재', admin: true },
     { path: '/settings/support', title: '지원 내역 설정', admin: true },
+    { path: '/settings/cost-alloc', title: '비용 배분 설정(본부)', admin: true },
     { path: '/settings/fixed', title: '고정비 설정', admin: true },
     { path: '/settings/employees', title: '사원 관리', admin: true },
     { path: '/settings/upload', title: '데이터 업로드', admin: true },

@@ -1,4 +1,5 @@
 // 공용 SVG 차트 — 디자인 가이드 색 고정: 배분 수익(파랑) · 지원 수익(라임) · 비용(주황) · 지원 비용(노랑)
+import { accL } from '../lib/acc';
 import { useEffect, useRef, useState } from 'react';
 import { fmt } from './ui';
 
@@ -103,7 +104,7 @@ export function Donut({ slices, total, centerLabel, head = '항목' }: { slices:
         {arcs.map((a, i) => (
           <div key={i} className="row" style={{ gap: 8, fontSize: 12.5 }}>
             <i style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.s.a}{a.s.kws?.length ? <span className="help"> · {a.s.kws.join(', ')}</span> : null}</span>
+            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{accL(a.s.a)}{a.s.kws?.length ? <span className="help"> · {a.s.kws.join(', ')}</span> : null}</span>
             <span className="num" style={{ fontSize: 12.5 }}>{fmt(a.s.v)}</span>
             <span className="help num" style={{ width: 42 }}>{total > 0 ? (a.s.v / total * 100).toFixed(1) + '%' : ''}</span>
           </div>

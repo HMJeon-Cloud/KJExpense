@@ -24,6 +24,8 @@ export default function init() {
   };
   const mLabel = m => m.slice(0, 4) + '-' + m.slice(4, 6);
   const norm = s => String(s == null ? '' : s).replace(/\s+/g, '');
+  // 계정과목 표시: (판)급여 → 급여(판관), (제)급여 → 급여(제조)
+  const accL = a => { const m = /^\s*\((판|제)\)\s*(.*)$/.exec(String(a == null ? '' : a)); return m ? m[2] + '(' + (m[1] === '판' ? '판관' : '제조') + ')' : String(a == null ? '' : a); };
   const MIN_MONTH = '202501';
   // SVG 텍스트 안전 처리
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1648,12 +1650,12 @@ export default function init() {
       if (DEPT_LEVEL) {
         const ranked = deptList.filter(d => unitCur(d) > 0).sort((a, b) => unitCur(b) - unitCur(a));
         divUnits = ranked.slice(0, 6);
-        divSlices = divUnits.map(d => ({ a: d, v: unitCur(d), kws: topAccOf(d).slice(0, 2).map(e => e[0].replace(/^\((판|제)\)/, '')) }));
+        divSlices = divUnits.map(d => ({ a: d, v: unitCur(d), kws: topAccOf(d).slice(0, 2).map(e => accL(e[0])) }));
         const etc = ranked.slice(6).reduce((s, d) => s + unitCur(d), 0);
         if (etc > 0) divSlices.push({ a: '기타', v: etc, kws: [] });
       } else {
         divUnits = hqShow.filter(hq => unitCur(hq) > 0);
-        divSlices = divUnits.map(hq => ({ a: hq, v: unitCur(hq), kws: topAccOf(hq).slice(0, 2).map(e => e[0].replace(/^\((판|제)\)/, '')) }));
+        divSlices = divUnits.map(hq => ({ a: hq, v: unitCur(hq), kws: topAccOf(hq).slice(0, 2).map(e => accL(e[0])) }));
       }
       const divTotal = divSlices.reduce((s, x) => s + x.v, 0);
       $id('buDivDonutMonth').innerText = mLabel(cur);

@@ -1,4 +1,5 @@
 // 부서별 비용 — 전표 조회: 조건 → 계정별 합계 → 전표 상세 · CSV
+import { accL } from '../lib/acc';
 import { ListHead } from '../components/ListHead';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth';
@@ -109,16 +110,16 @@ export default function DeptCost() {
         {months.length > 0 && (
           <div className="verdict">
             <div>
-              <div className="l">{months.length === 1 ? ymL(months[0]) : `${ymL(months[0])} ~ ${ymL(months[months.length - 1])}`} 비용 합계{effDepts?.length === 1 ? ` · ${effDepts[0]}` : hq ? ` · ${hq}` : ''}{acc ? ` · ${acc.replace(/^\((판|제)\)/, '')}` : ''}<HelpDot id="cost.verdict" /></div>
+              <div className="l">{months.length === 1 ? ymL(months[0]) : `${ymL(months[0])} ~ ${ymL(months[months.length - 1])}`} 비용 합계{effDepts?.length === 1 ? ` · ${effDepts[0]}` : hq ? ` · ${hq}` : ''}{acc ? ` · ${accL(acc)}` : ''}<HelpDot id="cost.verdict" /></div>
               <div className="big">{kor(total)}</div>
               <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · {fmt(scoped.length)}건{diffPct != null && <> · 직전 {span}개월 대비 <b style={{ color: diff > 0 ? 'var(--neg)' : '#2c7f2c' }}>{diff >= 0 ? '+' : ''}{diffPct}%</b> ({diff >= 0 ? '+' : ''}{kor(diff)})</>}</div>
-              {biggestChange && Math.abs(biggestChange[1]) > 0 && <div className="help" style={{ marginTop: 6 }}>가장 크게 바뀐 계정: <b style={{ color: 'var(--fg)' }}>{biggestChange[0].replace(/^\((판|제)\)/, '')}</b> {biggestChange[1] >= 0 ? '+' : ''}{kor(biggestChange[1])}</div>}
+              {biggestChange && Math.abs(biggestChange[1]) > 0 && <div className="help" style={{ marginTop: 6 }}>가장 크게 바뀐 계정: <b style={{ color: 'var(--fg)' }}>{accL(biggestChange[0])}</b> {biggestChange[1] >= 0 ? '+' : ''}{kor(biggestChange[1])}</div>}
               <div className="mini">{trend.map(([m, v]) => <div key={m} className={'col' + (months.includes(m) ? ' on' : '')} title={`${ymL(m)} · ${fmt(v)}원`} onClick={() => { setEndYm(m); setSpan(1); }}><i style={{ height: Math.max(2, Math.round(v / tMax * 52)) }} /><small>{+m.slice(4)}월</small></div>)}</div>
             </div>
             <div>
               <div className="l">부서 × 계정<HelpDot id="cost.matrix" /> <span>금액 큰 순 상위 {mx.ds.length}부서 · {mx.as.length}계정 · 칸을 누르면 그 전표만</span></div>
               <div className="tbl-wrap" style={{ marginTop: 8 }}><table className="mx">
-                <thead><tr><th>부서</th>{mx.as.map(a => <th key={a} title={a}>{a.replace(/^\((판|제)\)/, '')}</th>)}<th>합계</th></tr></thead>
+                <thead><tr><th>부서</th>{mx.as.map(a => <th key={a} title={a}>{accL(a)}</th>)}<th>합계</th></tr></thead>
                 <tbody>{mx.ds.map(d => { const row = mx.m[d] || {}; const rt = byDept.find(x => x[0] === d)?.[1] || 0; return <tr key={d}><td title={d} onClick={() => setDepts([d])}>{d}</td>{mx.as.map(a => { const v = row[a] || 0; const k = v / mx.max; return <td key={a} style={{ background: v ? `rgba(242,106,27,${0.06 + k * 0.6})` : undefined, color: k > 0.8 ? '#fff' : undefined, fontWeight: k > 0.5 ? 700 : undefined }} onClick={() => { setDepts([d]); setAcc(a); }}>{v ? fmt(v) : ''}</td>; })}<td className="tot" onClick={() => setDepts([d])}>{fmt(rt)}</td></tr>; })}</tbody>
               </table></div>
             </div>
@@ -135,7 +136,7 @@ export default function DeptCost() {
           <div className="card"><div className="hd">계정별 합계<HelpDot id="cost.byAcc" /> <span className="help" style={{ fontWeight: 400 }}>누르면 그 계정만</span></div>
             <div className="list" style={{ padding: 10 }}>
               {byAcc.length > 0 && <ListHead cls="li" cols={['계정', '', '>전표 비용', '>비중']} />}
-              {byAcc.slice(0, 30).map(([a, v]) => <div key={a} className={'li' + (acc === a ? ' on' : '')} onClick={() => setAcc(acc === a ? '' : a)}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{a.replace(/^\((판|제)\)/, '')}</span><div className="hbar"><i style={{ width: Math.max(2, Math.round(v / maxA * 100)) + '%', background: '#1f6fe8' }} /></div><span className="num">{fmt(v)}</span><span className="help num">{total ? Math.round(v / total * 100) + '%' : ''}</span></div>)}
+              {byAcc.slice(0, 30).map(([a, v]) => <div key={a} className={'li' + (acc === a ? ' on' : '')} onClick={() => setAcc(acc === a ? '' : a)}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{accL(a)}</span><div className="hbar"><i style={{ width: Math.max(2, Math.round(v / maxA * 100)) + '%', background: '#1f6fe8' }} /></div><span className="num">{fmt(v)}</span><span className="help num">{total ? Math.round(v / total * 100) + '%' : ''}</span></div>)}
             </div></div>
         </div>
 

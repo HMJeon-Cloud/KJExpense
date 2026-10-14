@@ -1,5 +1,6 @@
 // 전표 상세 표 — 부서별 비용 화면과 부서별 수익/비용 상세에서 함께 사용
 //   계정별 묶음(접기/펼치기) · 키워드 칩 · 검색 · 정렬 · CSV 내보내기
+import { accL } from '../lib/acc';
 import { useEffect, useMemo, useState } from 'react';
 import { fmt } from './ui';
 import { kor } from './charts';
@@ -67,7 +68,7 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
       <div className="vtbar">
         <input className="inp" style={{ width: 220 }} placeholder="적요·계정·부서 검색" value={q} onChange={e => setQ(e.target.value)} />
         <select className="inp" value={acc} onChange={e => { setAcc(e.target.value); onAccPick?.(e.target.value); }}>
-          <option value="">계정 전체</option>{accTotals.map(([a, v]) => <option key={a} value={a}>{a} ({kor(v)})</option>)}
+          <option value="">계정 전체</option>{accTotals.map(([a, v]) => <option key={a} value={a}>{accL(a)} ({kor(v)})</option>)}
         </select>
         <span className="seg"><button className={sort === 'date' ? 'on' : ''} onClick={() => setSort('date')}>날짜순</button><button className={sort === 'amt' ? 'on' : ''} onClick={() => setSort('amt')}>금액순</button></span>
         <span className="sp" />
@@ -87,7 +88,7 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
               shown += vis.length;
               return [
                 <tr key={a} className="grp" onClick={() => setOpenAcc(o => ({ ...o, [a]: !open }))}>
-                  <td colSpan={!filter.depts || filter.depts.length !== 1 ? 4 : 3}><span style={{ display: 'inline-block', width: 14, color: 'var(--fg-3)' }}>{open ? '▾' : '▸'}</span>{a.replace(/^\((판|제)\)/, '')} <span className="help" style={{ fontWeight: 400 }}>{list.length}건</span>{kws.map(k => <span key={k} className={'kw' + (kwSel === k ? ' on' : '')} onClick={e => { e.stopPropagation(); setKwSel(s => (s === k ? '' : k)); }}>{k}</span>)}</td>
+                  <td colSpan={!filter.depts || filter.depts.length !== 1 ? 4 : 3}><span style={{ display: 'inline-block', width: 14, color: 'var(--fg-3)' }}>{open ? '▾' : '▸'}</span>{accL(a)} <span className="help" style={{ fontWeight: 400 }}>{list.length}건</span>{kws.map(k => <span key={k} className={'kw' + (kwSel === k ? ' on' : '')} onClick={e => { e.stopPropagation(); setKwSel(s => (s === k ? '' : k)); }}>{k}</span>)}</td>
                   <td className={'num' + (sum < 0 ? ' neg' : '')}>{fmt(sum)}</td>
                 </tr>,
                 ...vis.map((v, i) => (

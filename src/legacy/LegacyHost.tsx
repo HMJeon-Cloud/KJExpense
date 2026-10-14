@@ -28,8 +28,12 @@ export const PATH_SCREEN: Record<string, string> = {
   '/bu': 'bu-margin', '/bu-real': 'bu-margin-real', '/bu-unit': 'bu-margin-my', '/dept': 'margin-alloc',
   '/dept-cost': 'dept-cost', '/dept-support': 'dept-support', '/trade': 'purchase-sales', '/matinput': 'mat-input', '/stock': 'lot-stock',
   '/settings/alloc': 'alloc-settings', '/settings/items': 'alloc-items', '/settings/materials': 'alloc-mats', '/settings/support': 'support',
+  // 실현 수익 계산을 함께 쓰는 새 화면 (운영 지표 · 비용 배분 설정)
+  '/ops': 'bu-margin-real', '/settings/cost-alloc': 'bu-margin-real',
 };
-const SCREEN_PATH: Record<string, string> = Object.fromEntries(Object.entries(PATH_SCREEN).map(([p, s]) => [s, p]));
+/** 화면 id → 경로 (같은 화면을 여러 경로가 쓰면 처음 것) */
+const SCREEN_PATH: Record<string, string> = {};
+Object.entries(PATH_SCREEN).forEach(([p, s]) => { if (!(s in SCREEN_PATH)) SCREEN_PATH[s] = p; });
 /** 새 디자인(React)으로 교체된 화면 — 기존 화면은 계산만 하고 보이지 않음 */
 export const REACT_SCREENS = new Set(['bu-margin', 'bu-margin-my', 'bu-margin-real', 'margin-alloc', 'dept-cost', 'purchase-sales', 'mat-input', 'lot-stock', 'dept-support', 'alloc-settings', 'alloc-items', 'alloc-mats', 'support']);
 

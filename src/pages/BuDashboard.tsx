@@ -1,13 +1,16 @@
 // 국전 수익/비용 — 경영진용 한 장 보고서
 //   1) 이번 달 결론(순수익·비용/수익·한 줄 설명)  2) 추이 + 주목할 변화  3) 본부 스코어보드(펼치면 부서)  4) 비용이 어디서 나갔나
 // 숫자는 기존 계산 모듈(legacy/screens/profit.js)이 내보내는 모델(KJHub.models)을 그대로 씁니다.
+import { accL } from '../lib/acc';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmt } from '../components/ui';
 import { HelpDot } from '../components/Help';
 import { HELP } from '../lib/helpDocs';
 import { ListHead } from '../components/ListHead';
-import { OpsMetrics, type OpsDeptRow } from '../components/OpsMetrics';
+import { type OpsDeptRow } from '../components/OpsMetrics';
+import { applyHqAlloc, useCostAlloc } from '../lib/hqAlloc';
+import { useAuth } from '../lib/auth';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL, C } from '../components/charts';
 
 type Model = {
@@ -26,6 +29,7 @@ type Model = {
 };
 type Actions = { setBaseMonth: (v: string) => void; setMonths: (n: number) => void; get: () => { baseMonth: string; months: number }; render: () => void };
 const KJ = () => (window as unknown as { KJHub?: { models?: Record<string, Model>; actions?: Record<string, Actions> } }).KJHub;
+const fmtEmp = (v: number) => (Math.abs(v - Math.round(v)) < 0.05 ? fmt(v) : (Math.round(v * 10) / 10).toLocaleString('ko-KR'));
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 const last = (a: number[]) => a[a.length - 1] || 0;
 const prevOf = (a: number[]) => (a.length > 1 ? a[a.length - 2] : 0);
@@ -43,6 +47,9 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
   const [showCost, setShowCost] = useState(true);
   const [showRev, setShowRev] = useState(true);
   const nav = useNavigate();
+  const allocCfg = useCostAlloc();
+  const { employee } = useAuth();
+  const isAdmin = employee?.role === 'admin';
 
   useEffect(() => {
     const onModel = (e: Event) => { const d = (e as CustomEvent).detail; if (d?.id === id) { setModel({ ...KJ()!.models![id] }); const a = KJ()?.actions?.[id]; if (a) setCtl(a.get()); } };
@@ -72,14 +79,29 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
     const s1 = net < 0 ? `${m}에는 비용이 수익보다 ${kor(-net)} 많았습니다.` : `${m}에는 수익이 비용보다 ${kor(net)} 많았습니다.`;
     const s2 = model.prev ? `전월보다 수익은 ${rMargin == null ? '비교 불가' : (rMargin >= 0 ? '+' : '') + rMargin + '%'}, 비용은 ${rCost == null ? '비교 불가' : (rCost >= 0 ? '+' : '') + rCost + '%'} 입니다.` : '';
     const s3 = top ? `가장 큰 변화는 ${top.d} ${top.a} ${top.up ? '증가' : '감소'}(${top.up ? '+' : '-'}${kor(top.v)})입니다.` : '';
-    const rows = model.hqGroups.map(g => {
-      const mg = g.margin; // ※ 본부 수익(hqAllocSeries)은 이미 지원 수취액을 포함 — 다시 더하지 않음
-      const emp = model.headcount.find(h => h.hq === g.hq)?.emp ?? 0;
-      return { key: g.hq, name: g.hq, emp, margin: mg, cost: g.cost, depts: model.deptRows.filter(x => x.hq === g.hq) };
-    });
+    type Row = { key: string; name: string; emp: number; margin: number[]; cost: number[]; depts: { d: string; emp: number; margin: number[]; cost: number[]; alloc?: boolean }[] };
+    let rows: Row[];
+    let alloc: ReturnType<typeof applyHqAlloc> | null = null;
+    if (model.realized && !model.deptLevel) {
+      // 실현 수익 화면: 경영전략본부·연구소 비용과 인원을 [비용 배분 설정] 비율로 수익 본부에 나눔
+      alloc = applyHqAlloc(model.deptRows, months, allocCfg);
+      const ci = months.length - 1, zeros = months.map(() => 0);
+      const order = (h: string) => { const i = model.hqOrder.indexOf(h); return i < 0 ? 999 : i; };
+      rows = alloc.hqs.slice().sort((a, b) => order(a.hq) - order(b.hq)).map(h => ({
+        key: h.hq, name: h.hq, emp: h.emp[ci], margin: h.margin, cost: h.cost,
+        depts: [...h.depts.filter(x => x.margin.some(v => v) || x.cost.some(v => Math.abs(v) > 0.5) || x.emp[ci] > 0.01).map(x => ({ d: x.d, emp: x.emp[ci], margin: x.margin, cost: x.cost })),
+          ...h.inFrom.map(f => ({ d: '← ' + f.from + ' 배분', emp: f.emp[ci], margin: zeros, cost: f.cost, alloc: true }))],
+      }));
+    } else {
+      rows = model.hqGroups.map(g => {
+        const mg = g.margin; // ※ 본부 수익(hqAllocSeries)은 이미 지원 수취액을 포함 — 다시 더하지 않음
+        const emp = model.headcount.find(h => h.hq === g.hq)?.emp ?? 0;
+        return { key: g.hq, name: g.hq, emp, margin: mg, cost: g.cost, depts: model.deptRows.filter(x => x.hq === g.hq) };
+      });
+    }
     const total = { emp: rows.reduce((s, x) => s + x.emp, 0), margin: months.map((_, i) => rows.reduce((s, x) => s + x.margin[i], 0)), cost: months.map((_, i) => rows.reduce((s, x) => s + x.cost[i], 0)) };
-    return { net, r, s1, s2, s3, notable, rows, total, period: `${ymL(months[0])}부터 ${ymL(cur)}까지 ${months.length}개월` };
-  }, [model]);
+    return { net, r, s1, s2, s3, notable, rows, total, alloc, period: `${ymL(months[0])}부터 ${ymL(cur)}까지 ${months.length}개월` };
+  }, [model, allocCfg]);
 
   const hasPrev = ctl.baseMonth > '2025-01';
   return (
@@ -123,6 +145,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
         .score tr.hq:hover td{background:var(--surface-2)}
         .score tr.dept td{color:var(--fg-2);font-weight:400;background:color-mix(in srgb,var(--surface-2) 55%,var(--surface));font-size:13px;padding-block:7px}
         .score tr.dept td:first-child{padding-left:34px}
+        .score tr.alloc td{color:#7c5a00;background:#fffbea;font-style:italic}
         .score tr.total td{font-weight:800;border-bottom:2px solid var(--line-2);background:var(--surface)}
         .score .caret{display:inline-block;width:16px;color:var(--fg-3);font-size:11px}
         .score .neg{color:var(--neg)}
@@ -192,7 +215,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                 {d.notable.map((x, i) => (
                   <div key={i} className="it" onClick={() => drill({ dept: x.d, acc: x.a })}>
                     <span className={'tag ' + (x.up ? 'n' : 'b')} style={{ padding: '2px 0', textAlign: 'center' }}>{x.up ? '▲' : '▼'}</span>
-                    <span className="t">{x.a.replace(/^\((판|제)\)/, '')}<small>{x.d}{model.deptLevel ? '' : ' · ' + x.hq}</small></span>
+                    <span className="t">{accL(x.a)}<small>{x.d}{model.deptLevel ? '' : ' · ' + x.hq}</small></span>
                     <span className="amt" style={{ color: x.up ? 'var(--neg)' : 'var(--brand)' }}>{(x.up ? '+' : '−') + kor(x.v)}</span>
                   </div>
                 ))}
@@ -204,12 +227,13 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           <section className="sec">
             <h2>{model.deptLevel ? '부서별' : '본부별'} 현황<HelpDot id={hid('scoreboard')} /></h2>
             <p className="lead" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>{ymL(model.cur)} 기준. 비용/수익은 100%를 넘으면 수익보다 비용이 많다는 뜻입니다.</span>{!model.deptLevel && <span className="seg" style={{ marginLeft: 'auto' }}><button className={!allOpen ? 'on' : ''} onClick={() => { setAllOpen(false); setOpen({}); }}>본부만</button><button className={allOpen ? 'on' : ''} onClick={() => { setAllOpen(true); setOpen({}); }}>부서까지</button></span>}</p>
+            {d.alloc && <p className="help" style={{ margin: '-4px 0 6px' }}>경영전략본부·연구소의 비용과 인원은 [비용 배분 설정] 비율로 수익 본부에 나눴습니다 ({d.alloc.ruleSrc ? ymL(d.alloc.ruleSrc) + ' 설정' : '기본 규칙: 응용기술연구소·이노베이션센터 → 소재사업본부, 의약연구소 → API합성본부'}). 본부를 펼치면 "← … 배분" 줄에서 받은 금액을 볼 수 있습니다.{isAdmin && <button className="btn sm ghost" style={{ marginLeft: 6, padding: '1px 8px' }} onClick={() => nav('/settings/cost-alloc')}>비용 배분 설정 →</button>}</p>}
             <div className="tbl-wrap">
               <table className="score">
                 <thead><tr><th>{model.deptLevel ? '부서' : '본부'}</th><th>인원</th><th>수익</th><th>비용</th><th>순수익</th><th style={{ minWidth: 150 }}>비용/수익</th><th>비용 전월비</th><th>누적 순수익</th><th style={{ width: 140 }}>순수익 추이</th></tr></thead>
                 <tbody>
                   <tr className="total">
-                    <td>전체</td><td>{fmt(d.total.emp)}</td><td>{fmt(last(d.total.margin))}</td><td>{fmt(last(d.total.cost))}</td>
+                    <td>전체</td><td>{fmtEmp(d.total.emp)}</td><td>{fmt(last(d.total.margin))}</td><td>{fmt(last(d.total.cost))}</td>
                     <td className={last(d.total.margin) - last(d.total.cost) >= 0 ? 'pos' : 'neg'}>{fmt(last(d.total.margin) - last(d.total.cost))}</td>
                     <td><RatioBar ratio={ratio(last(d.total.cost), last(d.total.margin))} /></td>
                     <td><Delta c={last(d.total.cost)} p={prevOf(d.total.cost)} invert /></td>
@@ -221,7 +245,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     const rowCells = (name: string, emp: number, margin: number[], cost: number[], cls: string, depts: string[], caret?: boolean) => (
                       <tr key={name} className={cls} onClick={() => cls === 'hq' ? setOpen(o => ({ ...o, [name]: !(o[name] ?? allOpen) })) : undefined} onDoubleClick={() => drillDepts(depts)} title={cls === 'hq' ? '클릭: 부서 펼치기 · 더블클릭: 부서별 수익/비용' : '더블클릭: 부서별 수익/비용'}>
                         <td>{caret != null && <span className="caret">{caret ? '▾' : '▸'}</span>}{name}</td>
-                        <td>{emp ? fmt(emp) : '-'}</td><td>{fmt(last(margin))}</td><td>{fmt(last(cost))}</td>
+                        <td>{emp ? fmtEmp(emp) : '-'}</td><td>{fmt(last(margin))}</td><td>{fmt(last(cost))}</td>
                         <td className={last(margin) - last(cost) >= 0 ? 'pos' : 'neg'}>{fmt(last(margin) - last(cost))}</td>
                         <td><RatioBar ratio={ratio(last(cost), last(margin))} /></td>
                         <td><Delta c={last(cost)} p={prevOf(cost)} invert /></td>
@@ -231,7 +255,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     );
                     return [
                       rowCells(r.name, r.emp, r.margin, r.cost, model.deptLevel ? 'dept' : 'hq', r.depts.map(x => x.d), model.deptLevel ? undefined : isOpen),
-                      ...(isOpen ? r.depts.map(x => rowCells(x.d, x.emp, x.margin, x.cost, 'dept', [x.d])) : []),
+                      ...(isOpen ? r.depts.map(x => rowCells(x.d, x.emp, x.margin, x.cost, (x as { alloc?: boolean }).alloc ? 'dept alloc' : 'dept', [x.d])) : []),
                     ];
                   })}
                 </tbody>
@@ -305,7 +329,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                         <div className="row" style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: 4, marginBottom: 2 }}><b style={{ fontSize: 13 }}>{u.unit}</b><span className="num help">{fmt(u.total)}</span></div>
                         {u.tops.map(t => (
                           <div key={t.acc} className="acc" onClick={() => drill(u.isDept ? { dept: u.unit, acc: t.acc } : { unit: u.unit, acc: t.acc })}>
-                            <span style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.acc.replace(/^\((판|제)\)/, '')}</span>
+                            <span style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{accL(t.acc)}</span>
                             <span className="num">{fmt(t.v)}</span>
                             <span className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>{t.kws.map(k => <span key={k} className="tag gr">{k}</span>)}</span>
                           </div>
@@ -334,8 +358,6 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
             )}
           </section>
 
-          {/* 6. 운영 지표 */}
-          <OpsMetrics model={model} />
         </>
       )}
     </div>

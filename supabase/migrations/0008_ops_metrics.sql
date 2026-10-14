@@ -1,7 +1,7 @@
--- 운영 지표 (국전 수익/비용 화면 아래 "운영 지표")   ※ 0006 을 다시 실행한 다음 실행 (판매 행에 청구처 cu 추가됨)
+-- 운영 지표 (수익/비용 › 운영 지표 화면)   ※ 0006 을 다시 실행한 다음 실행 (판매 행에 청구처 cu 추가됨)
 --   ops_metrics(p_from, p_to) : 조회 기간(YYYYMM~YYYYMM)의 아래 묶음을 한 번에 돌려줍니다.
 --     inv    : 지금 남은 LOT 재고  [부서, 사업단위, 입고 후 경과 구간, 재고금액, LOT 수]
---     invTop : 입고 후 90일 넘은 재고 LOT 상위 300  [부서, 사업단위, 품목, LOT, 입고일, 마지막 판매일, 재고수량, 재고금액, 경과일]
+--     invLots: 재고가 남은 LOT 전부  [부서, 사업단위, 품목, LOT, 입고일, 마지막 판매일, 재고수량, 재고금액, 경과일]  (화면: 본부 › 품목 › LOT 펼치기)
 --     sales  : 판매 발행월 기준 [부서, 년월, 품목, 청구처, 판매금액, 매출원가]           (매출원가 = 판매수량 × LOT 원가 단가)
 --     pur    : 입고월 기준 [부서, 년월, 수입처, 구매금액, 배분 부대비용]
 --     payee  : 부대비용 청구월 기준 [부서, 년월, 지급처, 금액]
@@ -28,7 +28,6 @@ inv as (
     sum(inv_amt) as amt, count(*) as n
   from iv group by 1, 2, 3
 ),
-invtop as (select * from iv where age > 90 order by inv_amt desc limit 300),
 -- ② 판매 (청구처·품목별 매출과 원가)
 sl as (
   select l.dept, e ->> 'm' as ym, l.item_name || ' (' || l.item_no || ')' as item, coalesce(nullif(e ->> 'cu', ''), '미지정 청구처') as cust,
@@ -87,7 +86,7 @@ fx as (
 select jsonb_build_object(
   'from', p_from, 'to', p_to, 'today', to_char(current_date, 'YYYYMMDD'),
   'inv',    coalesce((select jsonb_agg(jsonb_build_array(dept, biz_unit, bk, round(amt), n)) from inv), '[]'::jsonb),
-  'invTop', coalesce((select jsonb_agg(jsonb_build_array(dept, biz_unit, item_name || ' (' || item_no || ')', lot_no, p_date, s_date, inv_qty, round(inv_amt), age) order by inv_amt desc) from invtop), '[]'::jsonb),
+  'invLots', coalesce((select jsonb_agg(jsonb_build_array(dept, biz_unit, item_name || ' (' || item_no || ')', lot_no, p_date, s_date, inv_qty, round(inv_amt), age) order by inv_amt desc) from iv), '[]'::jsonb),
   'sales',  coalesce((select jsonb_agg(jsonb_build_array(dept, ym, item, cust, amt, round(cogs, 2))) from sales), '[]'::jsonb),
   'pur',    coalesce((select jsonb_agg(jsonb_build_array(dept, ym, vendor, p_amt, alloc)) from pur), '[]'::jsonb),
   'payee',  coalesce((select jsonb_agg(jsonb_build_array(dept, ym, payee, amt)) from payee), '[]'::jsonb),

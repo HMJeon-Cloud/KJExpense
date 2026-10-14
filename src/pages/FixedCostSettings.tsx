@@ -1,6 +1,7 @@
 // 설정 › 고정비 설정 — 운영 지표 ⑥ "고정비 대비 수익" 에서 어떤 전표를 고정비로 볼지 관리자가 정합니다.
 //   계정마다: 고정비 아님 / 전부 고정비 / 적요에 단어가 있는 것만 / 적요에 단어가 있는 것은 빼고
 //   저장: config.key = 'fixedCost'  { accounts: { [계정]: { mode, kws[] } } }  — 계산은 DB(fixed_cost_agg)가 같은 규칙으로 합니다.
+import { accL } from '../lib/acc';
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
@@ -97,7 +98,7 @@ export default function FixedCostSettings() {
     window.dispatchEvent(new CustomEvent('kjhub:fixedsaved'));
   };
 
-  const shown = accs.filter(a => (!q || a.acc.includes(q) || a.items.some(it => it.s.includes(q)))
+  const shown = accs.filter(a => (!q || a.acc.includes(q) || accL(a.acc).includes(q) || a.items.some(it => it.s.includes(q)))
     && (filt === 'all' || (filt === 'set' && a.rule) || (filt === 'unset' && !a.rule) || (filt === 'rec' && a.rec)));
   const recN = accs.filter(a => a.rec && !a.rule).length;
 
@@ -162,7 +163,7 @@ export default function FixedCostSettings() {
                 const isOpen = open === a.acc; const mode: Mode | 'none' = a.rule?.mode || 'none';
                 return [
                   <tr key={a.acc} className={(isOpen ? 'on ' : '') + (a.rule ? 'isfx' : '')}>
-                    <td onClick={() => setOpen(isOpen ? null : a.acc)}>{isOpen ? '▾ ' : '▸ '}{a.acc}{a.rec && <span className="rec" title="매달 나오고 월 금액 변동이 20% 미만">추천</span>}</td>
+                    <td onClick={() => setOpen(isOpen ? null : a.acc)}>{isOpen ? '▾ ' : '▸ '}{accL(a.acc)}{a.rec && <span className="rec" title="매달 나오고 월 금액 변동이 20% 미만">추천</span>}</td>
                     <td>{fmt(a.total)}</td><td>{fmt(a.avg)}</td>
                     <td className={a.present === months.length ? '' : 'no'}>{a.present}/{months.length}</td>
                     <td className="no">{a.cv == null ? '-' : Math.round(a.cv * 100) + '%'}</td>
@@ -197,7 +198,7 @@ function AccDetail({ a, rule, onAdd, onDel, onMode }: { a: { acc: string; total:
   return (
     <div className="det">
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <b style={{ fontSize: 13 }}>{a.acc}</b>
+        <b style={{ fontSize: 13 }}>{accL(a.acc)}</b>
         <span className="seg">{(['none', 'all', 'only', 'except'] as const).map(m => <button key={m} className={mode === m ? 'on' : ''} onClick={() => onMode(m)}>{MODE_L[m]}</button>)}</span>
         <span className="sp" />
         <span className="help">이 계정 고정비 <b style={{ color: '#b4500e' }}>{fmt(fx)}</b> / {fmt(a.total)} ({a.total ? Math.round(fx / a.total * 100) : 0}%)</span>

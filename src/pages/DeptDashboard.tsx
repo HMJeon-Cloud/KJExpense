@@ -1,5 +1,6 @@
 // 부서별 수익/비용 — 부서 책임자용: 내 부서가 받은 수익 안에서 비용을 썼는가
 //   1) 부서 표(정렬·필터)  2) 부서를 고르면 그 자리에서 상세(월별 표 · 비용 구성 · 점검)
+import { accL } from '../lib/acc';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmt } from '../components/ui';
@@ -250,11 +251,11 @@ function DeptDetail({ x, model, onDrill }: { x: Dept & { r: number | null; curM:
           <div>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{ymL(model.cur)} 비용 구성</div>
             {x.slices.length ? <Donut slices={x.slices} total={sum(x.slices.map(s => s.v))} centerLabel={ymL(model.cur)} head="계정 · 적요 키워드" /> : <span className="help">기준월 전표가 없습니다.</span>}
-            {x.slices.length > 0 && <div className="chips" style={{ marginTop: 8 }}>{x.slices.filter(s => s.a !== '기타').map(s => <button key={s.a} className="btn sm ghost" onClick={() => showVouchers(s.a)}>{s.a.replace(/^\((판|제)\)/, '')} 전표</button>)}</div>}
+            {x.slices.length > 0 && <div className="chips" style={{ marginTop: 8 }}>{x.slices.filter(s => s.a !== '기타').map(s => <button key={s.a} className="btn sm ghost" onClick={() => showVouchers(s.a)}>{accL(s.a)} 전표</button>)}</div>}
           </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>점검 포인트</div>
-            {x.alerts.length ? <div className="chips">{x.alerts.map((a, i) => <span key={i} className="chip" style={{ cursor: 'pointer', background: a.up ? 'var(--neg-soft)' : 'var(--brand-soft)', color: a.up ? 'var(--neg)' : 'var(--brand)', borderColor: 'transparent' }} onClick={() => showVouchers(a.a)}>{a.up ? '▲' : '▼'} {a.a.replace(/^\((판|제)\)/, '')} <b className="num">{(a.up ? '+' : '−') + kor(a.v)}</b></span>)}</div> : <span className="help">최근 평균 대비 크게 달라진 계정이 없습니다.</span>}
+            {x.alerts.length ? <div className="chips">{x.alerts.map((a, i) => <span key={i} className="chip" style={{ cursor: 'pointer', background: a.up ? 'var(--neg-soft)' : 'var(--brand-soft)', color: a.up ? 'var(--neg)' : 'var(--brand)', borderColor: 'transparent' }} onClick={() => showVouchers(a.a)}>{a.up ? '▲' : '▼'} {accL(a.a)} <b className="num">{(a.up ? '+' : '−') + kor(a.v)}</b></span>)}</div> : <span className="help">최근 평균 대비 크게 달라진 계정이 없습니다.</span>}
           </div>
         </div>
       </div>
