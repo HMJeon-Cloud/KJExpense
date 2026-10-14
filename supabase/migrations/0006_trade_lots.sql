@@ -263,7 +263,7 @@ language sql volatile security definer set search_path = public as $$
 $$;
 -- LOT 요약 표가 최신인지 확인하고, 아니면 다시 계산 (동시에 여러 명이 들어와도 한 번만)
 create or replace function public.ensure_lot_cache() returns text
-language plpgsql volatile security definer set search_path = public set jit = off as $$
+language plpgsql volatile security definer set search_path = public set jit = off set lock_timeout = '58s' as $$   -- 다른 화면이 계산 중이면 끝날 때까지 기다림 (Supabase 기본 잠금 대기 제한보다 길게)
 declare v text := public.kj_data_ver();
 begin
   if exists (select 1 from public.calc_cache where key = 'lot_cache' and ver = v) then return v; end if;

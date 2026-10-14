@@ -499,7 +499,10 @@ export async function loadResults(why) {
   resultsLoading = (async () => {
     const t0 = performance.now();
     try {
-      const [a, b] = await Promise.all([supabase.rpc('trade_profit_groups'), supabase.rpc('trade_monthly_margin')]);
+      // 처음(저장된 결과가 없을 때)은 월 수익이 LOT 요약을 만들어 저장하고, 이윤 9종은 그것을 이어서 씀 — 순서대로 부르면 서로 기다리지 않음
+      const call = async fn => { let r = await supabase.rpc(fn); if (r.error && /lock timeout|deadlock|canceling statement/i.test(r.error.message)) r = await supabase.rpc(fn); return r; };
+      const b = await call('trade_monthly_margin');
+      const a = await call('trade_profit_groups');
       if (a.error) throw new Error(a.error.message); if (b.error) throw new Error(b.error.message);
       const m = b.data || {};
       KJHub.results = Object.assign({}, KJHub.results, { profitMonthlyByGroup: a.data || {}, marginMonthlyByBU: m.byBU || {}, marginMonthlyByDept: m.byDept || {}, marginMonthlyFull: m.full || {} });
