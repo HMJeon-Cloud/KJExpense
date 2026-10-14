@@ -1008,6 +1008,38 @@ export default function init() {
           sDataMap[key].push(s);
         });
 
+        // ★ 같은 LOT 이라도 품번이 다르면 다른 LOT — 항상 "LOT + 품번" 으로 맞춤
+        //   구매 행은 품번이 ItemNoChk / ItemNo 두 칸이라, 다른 데이터(폐기·실자재투입)가 ItemNo 로 적혀 있어도 찾을 수 있게 보조 색인을 둠
+        const altKeyIdx = Object.create(null); // LOT_ItemNo(보조) → LOT 키
+        Object.keys(pDataMap).forEach(k => {
+          if (k.indexOf('__NO_LOT_') === 0) return;
+          (pDataMap[k] || []).forEach(p => {
+            const lt = cleanString(getVal(p, 'LOTNO')).toUpperCase();
+            const alt = cleanString(getVal(p, 'ITEMNO', 'ITEMNOCHK', '품번')).toUpperCase();
+            if (lt && alt && !altKeyIdx[lt + '_' + alt]) altKeyIdx[lt + '_' + alt] = k;
+          });
+        });
+        // LOT 키 찾기: 정확히 같은 (LOT_품번) 이 있으면 그것, 없으면 보조 품번으로
+        const lotKeyOf = cands => { for (const c of cands) if (c && pDataMap[c]) return c; for (const c of cands) if (c && altKeyIdx[c]) return altKeyIdx[c]; return null; };
+        // ★ 실자재투입: 생산에 투입된 원료는 재고에서 빠짐 — (자재 LOT RealLotNo + 자재 품번 MatItemNo) 로 구매 LOT 에 맞춤
+        const matUseMap = Object.create(null); // LOT 키 → 투입 수량 합
+        ((window.KJHub && window.KJHub.data && window.KJHub.data.matinput) || []).forEach(r => {
+          const lt = cleanString(__matPick(r, ['RealLotNo', '자재LotNo'])).toUpperCase();
+          const it = cleanString(__matPick(r, ['MatItemNo', '자재코드', '원료코드'])).toUpperCase();
+          if (!lt || !it) return;
+          const k = lotKeyOf([lt + '_' + it]);
+          if (!k) return;
+          matUseMap[k] = (matUseMap[k] || 0) + Math.abs(parseNum(__matPick(r, ['Qty', '투입수량'])));
+        });
+        // ★ 폐기 수량: 폐기 행의 (LOT + 품번 후보) 로 LOT 하나에만 배정
+        const disposalByKey = Object.create(null);
+        Object.keys(disposalMap).forEach(key => {
+          (disposalMap[key] || []).forEach(d => {
+            const k = lotKeyOf(d.keys || [key]);
+            if (k) disposalByKey[k] = (disposalByKey[k] || 0) + Math.abs(parseNum(d.qty));
+          });
+        });
+
         // ★ 폐기 정보 (표시용)
         //   LOT의 잔량(총 입고수량 − 총 판매수량)이 폐기 수량과 같으면 그 잔량은 폐기된 것으로 보고
         //   비용 상세에서 '잔량 행'을 표시하지 않습니다. 총 구매수량·금액은 그대로 둡니다.
@@ -1017,14 +1049,15 @@ export default function init() {
           const dQty = disposalMap[key].reduce((a, d) => a + Math.abs(parseNum(d.qty)), 0);
           if (dQty <= 0) return;
           const lotNo = (disposalMap[key][0] || {}).lotNo || '';
-          const keys = Object.keys(pDataMap).filter(k => k === key || (lotNo && k.indexOf(lotNo + '_') === 0));
+          // LOT 만 같은 다른 품번은 보지 않음 — 폐기 행의 품번 후보(ItemNoChk/ItemNo)와 맞는 LOT 만
+          const keys = (disposalMap[key][0] && disposalMap[key][0].keys || [key]).map(c => (pDataMap[c] ? c : altKeyIdx[c])).filter((v, i, a) => v && a.indexOf(v) === i);
           let hit = false;
           for (const k of keys) {
             const pr = pDataMap[k] || [];
             if (!pr.length) continue;
             const pQty = pr.reduce((a, r) => a + parseNum(getVal(r, 'QTY', '수량')), 0);
             const sQty = (sDataMap[k] || []).reduce((a, r) => a + parseNum(getVal(r, 'QTY', '수량')), 0);
-            const left = pQty - sQty;
+            const left = pQty - sQty - (matUseMap[k] || 0);   // 생산 투입분은 이미 빠진 잔량
             if (left <= 0) continue;
             if (Math.abs(left - dQty) > Math.max(1e-6, dQty * 1e-6)) continue;
             disposalInfo[k] = { qty: dQty, matched: true, all: sQty <= 1e-9 }; // 판매가 전혀 없으면 전량 폐기
@@ -1135,9 +1168,9 @@ export default function init() {
           });
           const totalCost = totalPAmt + totalAllocExp;
           const unitCost = totalPQty > 0 ? totalCost / totalPQty : 0;
-          let totalDisposalQty = 0;
-          const disposals = disposalMap[lotNo + "_" + itemNo] || [];
-          disposals.forEach(d => totalDisposalQty += d.qty);
+          const disposals = disposalMap[lotNo + "_" + itemNo] || disposalMap[String(lotKey)] || [];
+          const totalDisposalQty = disposalByKey[lotKey] || 0;   // LOT + 품번 으로 맞춘 폐기 수량
+          const totalMatQty = matUseMap[lotKey] || 0;            // 생산에 투입된 수량 (실자재투입)
           let totalSQty = 0,
             totalSAmt = 0,
             sDateRaw = '';
@@ -1165,7 +1198,7 @@ export default function init() {
           const cogs = totalSQty * marginUnit; // 매출원가 = 제조원가(입고월) × 판매수량
           const margin = totalSAmt - cogs;      // 실현 수익 = 판매금액 − 제조원가 × 판매수량
           // 💡 소수점 오차 방지를 위해 toFixed(4) 적용하여 재고 수량 계산
-          const inventoryQty = Number((totalPQty - totalSQty - totalDisposalQty).toFixed(4));
+          const inventoryQty = Number((totalPQty - totalSQty - totalDisposalQty - totalMatQty).toFixed(4));
           const inventoryAmt = inventoryQty > 0 ? inventoryQty * unitCost : 0;
           const searchKeywords = {
             itemNo,
@@ -1195,6 +1228,7 @@ export default function init() {
             totalSQty,
             totalSAmt,
             totalDisposalQty,
+            totalMatQty,
             sales: totalSAmt,
             cogs,
             inventory: inventoryAmt,
@@ -1461,9 +1495,8 @@ export default function init() {
         const d = cleanString(getVal(s, 'BILLDATE', '청구일자', '판매일자', '일자'));
         if (d > sDateRaw) sDateRaw = d;
       });
-      let dQty = 0;
-      (lot.disposals || []).forEach(d => dQty += d.qty);
-      const invQty = Number((pQty - sQty - dQty).toFixed(4));
+      const dQty = lot.totalDisposalQty || 0, mQty = lot.totalMatQty || 0;
+      const invQty = Number((pQty - sQty - dQty - mQty).toFixed(4));
       const cogs = sQty * marginUnit;
       return Object.assign({}, lot, {
         pRows, sRows,
@@ -2268,6 +2301,9 @@ export default function init() {
             po.left -= q; so.left -= q;
           }
         });
+        // 생산 투입(실자재투입) 분: 판매 다음 순서로 입고 건에서 차감해 "생산 투입" 행으로 표시
+        let __mLeft = lotObj.totalMatQty || 0;
+        ps.forEach(po => { if (__mLeft <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, __mLeft); out.push({ p: po.p, s: null, qty: q, tot: 0, matUsed: true }); po.left -= q; __mLeft -= q; });
         // 미판매 잔량 행: 폐기와 수량이 일치하면 표시하지 않음 (총 구매수량·금액은 그대로 유지)
         const __disp = lotObj.disposalInfo;
         ps.forEach(po => { if (po.left > 1e-9) out.push({ p: po.p, s: null, qty: po.left, tot: 0, rest: true }); });
@@ -2422,7 +2458,11 @@ export default function init() {
           className: "py-1 px-1.5 text-right text-emerald-800 bg-emerald-100/50 " + bottomBorder
         }, formatNumber(parseNum(getVal(s, 'PRICE')) * parseNum(getVal(s, 'EXRATE')))), /*#__PURE__*/React.createElement("td", {
           className: "py-1 px-1.5 text-right text-emerald-800 bg-emerald-100/50 font-medium " + bottomBorder
-        }, formatNumber(Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액')) * segRatio)))) : (seg && seg.disposedAll) ? /*#__PURE__*/React.createElement("td", {
+        }, formatNumber(Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액')) * segRatio)))) : (seg && seg.matUsed) ? /*#__PURE__*/React.createElement("td", {
+          colSpan: 9,
+          className: "py-1 px-1.5 text-center text-indigo-600 bg-indigo-50/30 border-l border-slate-100 " + bottomBorder + " font-medium",
+          title: "실자재투입 내역에서 이 LOT(같은 품번)이 생산에 투입된 수량 — 재고에서 뺌"
+        }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.disposedAll) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-red-500 bg-red-50/30 border-l border-slate-100 " + bottomBorder + " font-medium"
         }, "전량 폐기") : /*#__PURE__*/React.createElement("td", {
