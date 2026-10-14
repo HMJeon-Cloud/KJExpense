@@ -42,7 +42,7 @@ returns table (
   monthly jsonb,   -- 판매 발행월별 수익 {YYYYMM: Σ(_margin)}
   unit_won float8,  -- 첫 구매행의 단가(원) = PRICE × EXRATE (JS 와 같은 배정밀도)   ※ 이윤 9종용
   proc_u numeric,   -- 입고월 제조원가 (없으면 null)
-  sales jsonb       -- 판매 행 [{q, a, m(발행월), as(자산순번), dp(부서)}]  ※ 이윤 9종용
+  sales jsonb       -- 판매 행 [{q, a, m(발행월), as(자산순번), dp(부서), cu(청구처)}]  ※ 이윤 9종 · 운영 지표용
 )
 language sql stable security definer set search_path = public set jit = off as $$
 with
@@ -93,7 +93,8 @@ s1 as materialized (
     public.kj_clean(public.kj_v(d, 'DEPTNAME', '부서')) as dept_c,
     public.kj_clean(public.kj_v(d, 'EMPNAME', '담당자')) as emp_c,
     public.kj_clean(public.kj_v(d, 'ITEMNAME', '품목')) as item_name_c,
-    public.kj_clean(public.kj_v(d, 'ASSETSEQ', '자산순번')) as asset_c
+    public.kj_clean(public.kj_v(d, 'ASSETSEQ', '자산순번')) as asset_c,
+    public.kj_clean(public.kj_v(d, 'CUSTNAME', '청구처')) as cust_c   -- 청구처 (운영 지표 0008 용, 계산에는 쓰지 않음)
   from s0
 ),
 sm as materialized (
@@ -180,12 +181,12 @@ h3 as materialized (
   from h2 left join h2m mp on mp.key = h2.key
 ),
 -- 판매 행별 수익   ※ s._margin = amt − qty × marginUnit
-sr as materialized (select sm.id, sm.key, sm.qty, sm.amt, sm.bdate, sm.bym, sm.asset_c, sm.dept_c, h3.margin_unit from sm join h3 on h3.key = sm.key),
+sr as materialized (select sm.id, sm.key, sm.qty, sm.amt, sm.bdate, sm.bym, sm.asset_c, sm.dept_c, sm.cust_c, h3.margin_unit from sm join h3 on h3.key = sm.key),
 smon as (select key, bym, sum(amt - qty * margin_unit) as v from sr where length(bym) = 6 group by key, bym),
 stot as (
   select a.key, a.s_qty, a.s_amt, a.s_date, b.monthly, a.sales
   from (select key, sum(qty) as s_qty, sum(amt) as s_amt, max(bdate) as s_date,
-               jsonb_agg(jsonb_build_object('q', qty, 'a', amt, 'm', bym, 'as', asset_c, 'dp', dept_c) order by bdate, id) as sales from sr group by key) a
+               jsonb_agg(jsonb_build_object('q', qty, 'a', amt, 'm', bym, 'as', asset_c, 'dp', dept_c, 'cu', cust_c) order by bdate, id) as sales from sr group by key) a
   left join (select key, jsonb_object_agg(bym, v) as monthly from smon group by key) b on b.key = a.key
 )
 select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vendor, h3.bl_no, h3.lot_no, h3.imp_kind, h3.asset_seq,

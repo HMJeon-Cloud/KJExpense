@@ -7,6 +7,7 @@ import { fmt } from '../components/ui';
 import { HelpDot } from '../components/Help';
 import { HELP } from '../lib/helpDocs';
 import { ListHead } from '../components/ListHead';
+import { OpsMetrics, type OpsDeptRow } from '../components/OpsMetrics';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL, C } from '../components/charts';
 
 type Model = {
@@ -20,7 +21,7 @@ type Model = {
   alerts: { ups: { d: string; a: string; v: number; hq: string }[]; downs: { d: string; a: string; v: number; hq: string }[] };
   headcount: { hq: string; emp: number; cost: number; per: number | null; depts: string[] }[];
   hqOrder: string[];
-  deptRows: { d: string; hq: string; margin: number[]; cost: number[]; emp: number }[];
+  deptRows: OpsDeptRow[]; allow?: string[] | null; fixedRule?: string;
   revenue: { byGroup: { key: string; label: string; series: number[]; cur: number; prev: number; sum: number }[]; byBU: { bu: string; series: number[]; cur: number; prev: number; sum: number }[]; byDept: { d: string; hq: string; cur: number; prev: number; sum: number; groups: string[]; support: number }[]; supportCur: number };
 };
 type Actions = { setBaseMonth: (v: string) => void; setMonths: (n: number) => void; get: () => { baseMonth: string; months: number }; render: () => void };
@@ -332,6 +333,9 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
               </div>
             )}
           </section>
+
+          {/* 6. 운영 지표 */}
+          <OpsMetrics model={model} />
         </>
       )}
     </div>

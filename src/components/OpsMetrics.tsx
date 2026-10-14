@@ -1,0 +1,460 @@
+// 운영 지표 — 국전 수익/비용 화면 아래 7가지
+//   ① 인당 수익·비용·순수익   ② 재고 회전일수·오래된 재고   ③ 품목·청구처 마진율   ④ 거래처 집중도
+//   ⑤ 수입 부대비용률          ⑥ 고정비 대비 수익           ⑦ 환율 영향
+//   ①·⑥ 은 화면 모델(전표·인원·수익) 로, ②~⑤·⑦ 은 DB 함수 ops_metrics(0008) 결과로 계산합니다.
+//   화면 권한(본부장 등)이 있으면 허용된 부서의 값만 씁니다.
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { fmt } from './ui';
+import { HelpDot } from './Help';
+import { ListHead } from './ListHead';
+import { kor, ymL, C } from './charts';
+
+export type OpsDeptRow = {
+  d: string; hq: string; margin: number[]; cost: number[]; emp: number;
+  empSer?: number[]; inSer?: number[]; outSer?: number[]; vCost?: number[]; fixed?: number[]; fixedAcc?: Record<string, number[]>;
+};
+export type OpsModel = {
+  months: string[]; cur: string; realized: boolean; deptLevel: boolean; allow?: string[] | null; fixedRule?: string;
+  series: { margin: number[] }; deptRows: OpsDeptRow[];
+};
+
+type Ops = {
+  from: string; to: string; today: string;
+  inv: [string, string, string, number, number][];                     // 부서, 사업단위, 구간, 금액, LOT수
+  invTop: [string, string, string, string, string, string, number, number, number][]; // 부서, 사업단위, 품목, LOT, 입고일, 최근판매일, 수량, 금액, 경과일
+  sales: [string, string, string, string, number, number][];           // 부서, 년월, 품목, 청구처, 매출, 원가
+  pur: [string, string, string, number, number][];                     // 부서, 년월, 수입처, 구매금액, 부대비용
+  payee: [string, string, string, number][];                           // 부서, 년월, 지급처, 금액
+  fx: [string, string, string, number, number][];                      // 부서, 년월, 통화, 외화금액, 원화환산
+};
+
+// ── DB 결과 캐시 (업로드하면 비움) ──
+const cache = new Map<string, Promise<Ops | { error: string }>>();
+if (typeof window !== 'undefined') window.addEventListener('kjhub:uploaded', () => cache.clear());
+function loadOps(from: string, to: string) {
+  const k = from + '|' + to;
+  if (!cache.has(k)) {
+    cache.set(k, (async () => {
+      const { data, error } = await supabase.rpc('ops_metrics', { p_from: from, p_to: to });
+      if (error) { cache.delete(k); return { error: /ops_metrics|function|404|PGRST202/i.test(error.message + (error.code || '')) ? 'NOFN' : error.message }; }
+      return data as Ops;
+    })());
+  }
+  return cache.get(k)!;
+}
+
+const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+const pct1 = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
+const sgn = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '');
+const BK = ['0-90', '91-180', '181-365', '365+', '미상'] as const;
+const BK_L: Record<string, string> = { '0-90': '90일 이하', '91-180': '91~180일', '181-365': '181~365일', '365+': '1년 넘음', '미상': '입고일 없음' };
+const BK_C: Record<string, string> = { '0-90': '#9cc3f5', '91-180': '#f5c26b', '181-365': '#f08a4b', '365+': '#d93c3c', '미상': '#cbd5e1' };
+const fmtDate = (s: string) => { const d = String(s || '').replace(/[^0-9]/g, ''); return d.length >= 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : '-'; };
+
+function allowFn(allow: string[] | null | undefined) {
+  if (allow == null) return () => true;
+  const ex = new Set<string>(), pre: string[] = [];
+  allow.forEach(p => { const t = String(p || '').trim(); if (!t) return; if (t.endsWith('*')) pre.push(t.slice(0, -1)); else ex.add(t); });
+  return (d: string) => { const v = String(d || '').trim(); return ex.has(v) || pre.some(p => v.startsWith(p)); };
+}
+
+/** 값이 없는 달(null)은 건너뛰는 작은 꺾은선 */
+function Line({ vals, color = C.margin, h = 30, w = 120 }: { vals: (number | null)[]; color?: string; h?: number; w?: number }) {
+  const pts = vals.map((v, i) => (v == null || !isFinite(v) ? null : { i, v }));
+  const ok = pts.filter(Boolean) as { i: number; v: number }[];
+  if (ok.length < 2) return <span className="help">-</span>;
+  const mn = Math.min(...ok.map(p => p.v)), mx = Math.max(...ok.map(p => p.v)), rg = mx - mn || 1;
+  const x = (i: number) => 3 + (i / Math.max(1, vals.length - 1)) * (w - 6), y = (v: number) => 3 + (1 - (v - mn) / rg) * (h - 6);
+  const d = ok.map((p, k) => (k ? 'L' : 'M') + x(p.i).toFixed(1) + ',' + y(p.v).toFixed(1)).join(' ');
+  const lp = ok[ok.length - 1];
+  return <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', marginLeft: 'auto' }}><path d={d} fill="none" stroke={color} strokeWidth={1.6} /><circle cx={x(lp.i)} cy={y(lp.v)} r={2.4} fill={color} /></svg>;
+}
+
+/** 월별 막대 (값 + 선택: 두 번째 값 점선) */
+function MonthBars({ months, a, b, aLbl, bLbl, fmtV = kor, colorA = C.margin, colorB = C.cost }: { months: string[]; a: (number | null)[]; b?: (number | null)[]; aLbl: string; bLbl?: string; fmtV?: (v: number) => string; colorA?: string; colorB?: string }) {
+  const all = [...a, ...(b || [])].filter((v): v is number => v != null && isFinite(v));
+  const mx = Math.max(1, ...all.map(v => Math.abs(v)));
+  return (
+    <div className="ops-mb">
+      <div className="ops-mb-lg"><span><i style={{ background: colorA }} />{aLbl}</span>{bLbl && <span><i style={{ background: colorB }} />{bLbl}</span>}</div>
+      <div className="ops-mb-row">
+        {months.map((m, i) => (
+          <div key={m} className="ops-mb-col" title={`${ymL(m)} · ${aLbl} ${a[i] == null ? '-' : fmt(a[i])}${b ? ` · ${bLbl} ${b[i] == null ? '-' : fmt(b[i])}` : ''}`}>
+            <div className="ops-mb-bars">
+              <i style={{ height: Math.max(1, Math.abs(a[i] || 0) / mx * 100) + '%', background: (a[i] || 0) < 0 ? '#d93c3c' : colorA }} />
+              {b && <i style={{ height: Math.max(1, Math.abs(b[i] || 0) / mx * 100) + '%', background: colorB }} />}
+            </div>
+            <small className={i === months.length - 1 ? 'on' : ''}>{Number(m.slice(4))}월</small>
+            <b>{a[i] == null ? '-' : fmtV(a[i] as number)}</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Kpi({ l, v, s, tone }: { l: string; v: string; s?: string; tone?: 'neg' | 'pos' }) {
+  return <div className="ops-kpi"><span>{l}</span><b className={tone || ''}>{v}</b>{s && <small>{s}</small>}</div>;
+}
+
+export function OpsMetrics({ model }: { model: OpsModel }) {
+  const { months, cur } = model;
+  const from = months[0], to = cur;
+  const [ops, setOps] = useState<Ops | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const h = () => setTick(t => t + 1); window.addEventListener('kjhub:uploaded', h); return () => window.removeEventListener('kjhub:uploaded', h); }, []);
+  useEffect(() => {
+    let alive = true; setErr(null);
+    loadOps(from, to).then(r => { if (!alive) return; if ('error' in r) { setErr(r.error); setOps(null); } else setOps(r); });
+    return () => { alive = false; };
+  }, [from, to, tick]);
+
+  const ok = useMemo(() => allowFn(model.allow), [model.allow]);
+  const hqOf = useMemo(() => { const m: Record<string, string> = {}; model.deptRows.forEach(r => { m[r.d] = r.hq; }); return m; }, [model.deptRows]);
+  const unitOf = (d: string) => (model.deptLevel ? d : hqOf[d] || '기타');
+  const unitLbl = model.deptLevel ? '부서' : '본부';
+  const ci = months.length - 1;
+  const prevMonths = months.slice(0, -1);
+
+  // ── ① 인당 ──
+  const perCap = useMemo(() => {
+    const units: Record<string, { name: string; m: number[]; c: number[]; e: number[]; depts: OpsDeptRow[] }> = {};
+    const tot = { m: months.map(() => 0), c: months.map(() => 0), e: months.map(() => 0) };
+    model.deptRows.forEach(r => {
+      const u = model.deptLevel ? r.d : r.hq;
+      const o = units[u] || (units[u] = { name: u, m: months.map(() => 0), c: months.map(() => 0), e: months.map(() => 0), depts: [] });
+      o.depts.push(r);
+      months.forEach((_, i) => { const e = (r.empSer || [])[i] || 0; o.m[i] += r.margin[i] || 0; o.c[i] += r.cost[i] || 0; o.e[i] += e; tot.m[i] += r.margin[i] || 0; tot.c[i] += r.cost[i] || 0; tot.e[i] += e; });
+    });
+    const per = (x: { m: number[]; c: number[]; e: number[] }) => ({
+      emp: x.e[ci], pm: x.e[ci] ? x.m[ci] / x.e[ci] : null, pc: x.e[ci] ? x.c[ci] / x.e[ci] : null, pn: x.e[ci] ? (x.m[ci] - x.c[ci]) / x.e[ci] : null,
+      avgN: (() => { const v = months.map((_, i) => (x.e[i] ? (x.m[i] - x.c[i]) / x.e[i] : null)).filter((z): z is number => z != null); return v.length ? sum(v) / v.length : null; })(),
+      line: months.map((_, i) => (x.e[i] ? (x.m[i] - x.c[i]) / x.e[i] : null)),
+      inn: 0, out: 0,
+    });
+    const rows = Object.values(units).map(u => ({ name: u.name, ...per(u), inn: sum(u.depts.map(d => sum(d.inSer || []))), out: sum(u.depts.map(d => sum(d.outSer || []))), empStart: u.e[0] }))
+      .filter(r => r.emp > 0 || r.pm != null).sort((a, b) => (b.pn ?? -1e18) - (a.pn ?? -1e18));
+    const t = { name: '전체', ...per(tot), inn: sum(model.deptRows.map(d => sum(d.inSer || []))), out: sum(model.deptRows.map(d => sum(d.outSer || []))), empStart: tot.e[0] };
+    return { rows, total: t, hasEmp: tot.e.some(v => v > 0) };
+  }, [model.deptRows, months, ci, model.deptLevel]);
+
+  // ── ⑥ 고정비 대비 수익 ──
+  const fixed = useMemo(() => {
+    const rev = model.allow == null ? model.series.margin.slice() : months.map((_, i) => sum(model.deptRows.map(r => r.margin[i] || 0)));
+    const fx = months.map((_, i) => sum(model.deptRows.map(r => (r.fixed || [])[i] || 0)));
+    const vc = months.map((_, i) => sum(model.deptRows.map(r => (r.vCost || [])[i] || 0)));
+    const accs: Record<string, number> = {};
+    model.deptRows.forEach(r => Object.entries(r.fixedAcc || {}).forEach(([a, ser]) => { accs[a] = (accs[a] || 0) + (ser[ci] || 0); }));
+    const accList = Object.entries(accs).filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
+    return { rev, fx, vc, accList, cover: months.map((_, i) => (fx[i] > 0 ? Math.round(rev[i] / fx[i] * 1000) / 10 : null)) };
+  }, [model.deptRows, model.series.margin, model.allow, months, ci]);
+
+  // ── DB 묶음 (②③④⑤⑦) ──
+  const db = useMemo(() => {
+    if (!ops) return null;
+    const inv = ops.inv.filter(r => ok(r[0]));
+    const invTop = ops.invTop.filter(r => ok(r[0]));
+    const sales = ops.sales.filter(r => ok(r[0]));
+    const pur = ops.pur.filter(r => ok(r[0]));
+    const payee = ops.payee.filter(r => ok(r[0]));
+    const fx = ops.fx.filter(r => ok(r[0]));
+    const mIdx: Record<string, number> = {}; months.forEach((m, i) => { mIdx[m] = i; });
+
+    // ② 재고
+    const invTotal = sum(inv.map(r => r[3]));
+    const byBk: Record<string, { amt: number; n: number }> = {}; inv.forEach(r => { const o = byBk[r[2]] || (byBk[r[2]] = { amt: 0, n: 0 }); o.amt += r[3]; o.n += r[4]; });
+    const byUnitInv: Record<string, Record<string, number>> = {}; inv.forEach(r => { const u = unitOf(r[0]); const o = byUnitInv[u] || (byUnitInv[u] = {}); o[r[2]] = (o[r[2]] || 0) + r[3]; });
+    const cogsM = months.map(() => 0); const salesM = months.map(() => 0);
+    sales.forEach(r => { const i = mIdx[r[1]]; if (i == null) return; cogsM[i] += r[5]; salesM[i] += r[4]; });
+    const last3 = cogsM.slice(-3); const avgCogs = last3.length ? sum(last3) / last3.length : 0;
+    const turnDays = avgCogs > 0 ? Math.round(invTotal / avgCogs * 30) : null;
+    const old180 = (byBk['181-365']?.amt || 0) + (byBk['365+']?.amt || 0);
+
+    // ③ 품목 · 청구처 마진율
+    const marginBy = (key: 2 | 3) => {
+      const g: Record<string, { s: number[]; c: number[] }> = {};
+      sales.forEach(r => { const i = mIdx[r[1]]; if (i == null) return; const o = g[r[key]] || (g[r[key]] = { s: months.map(() => 0), c: months.map(() => 0) }); o.s[i] += r[4]; o.c[i] += r[5]; });
+      const totCur = sum(Object.values(g).map(o => o.s[ci]));
+      return Object.entries(g).map(([k, o]) => {
+        const rate = months.map((_, i) => (o.s[i] > 0 ? (o.s[i] - o.c[i]) / o.s[i] * 100 : null));
+        const ps = sum(o.s.slice(0, -1)), pc = sum(o.c.slice(0, -1));
+        const base = ps > 0 ? (ps - pc) / ps * 100 : null;
+        const curR = rate[ci];
+        const diff = curR != null && base != null ? curR - base : null;
+        const share = totCur > 0 ? o.s[ci] / totCur * 100 : 0;
+        const alert = diff != null && diff <= -5 && share >= 1;
+        return { k, sCur: o.s[ci], mCur: o.s[ci] - o.c[ci], curR, base, diff, share, alert, rate, sAll: sum(o.s) };
+      }).filter(x => x.sAll !== 0);
+    };
+    const byItem = marginBy(2), byCust = marginBy(3);
+
+    // ④ 거래처 집중도
+    const custCur = byCust.filter(x => x.sCur > 0).sort((a, b) => b.sCur - a.sCur);
+    const custCurTot = sum(custCur.map(x => x.sCur));
+    const top5 = custCurTot > 0 ? sum(custCur.slice(0, 5).map(x => x.sCur)) / custCurTot * 100 : null;
+    const top1 = custCurTot > 0 && custCur[0] ? custCur[0].sCur / custCurTot * 100 : null;
+    const top5Line = months.map((_, i) => {
+      const v: Record<string, number> = {}; sales.forEach(r => { if (mIdx[r[1]] === i) v[r[3]] = (v[r[3]] || 0) + r[4]; });
+      const arr = Object.values(v).filter(x => x > 0).sort((a, b) => b - a); const t = sum(arr);
+      return t > 0 ? sum(arr.slice(0, 5)) / t * 100 : null;
+    });
+
+    // ⑤ 부대비용률
+    const pM = months.map(() => 0), aM = months.map(() => 0);
+    const byVendor: Record<string, { p: number; a: number }> = {};
+    pur.forEach(r => { const i = mIdx[r[1]]; if (i == null) return; pM[i] += r[3]; aM[i] += r[4]; const o = byVendor[r[2]] || (byVendor[r[2]] = { p: 0, a: 0 }); o.p += r[3]; o.a += r[4]; });
+    const rateM = months.map((_, i) => (pM[i] > 0 ? Math.round(aM[i] / pM[i] * 1000) / 10 : null));
+    const vendors = Object.entries(byVendor).map(([k, o]) => ({ k, p: o.p, a: o.a, r: o.p > 0 ? o.a / o.p * 100 : null })).filter(x => x.p > 0).sort((a, b) => b.p - a.p);
+    const payees: Record<string, number[]> = {};
+    payee.forEach(r => { const i = mIdx[r[1]]; if (i == null) return; (payees[r[2]] = payees[r[2]] || months.map(() => 0))[i] += r[3]; });
+    const payeeList = Object.entries(payees).map(([k, s]) => ({ k, sum: sum(s), cur: s[ci], prev: ci > 0 ? s[ci - 1] : 0 })).sort((a, b) => b.sum - a.sum);
+
+    // ⑦ 환율
+    const cur: Record<string, { f: number[]; w: number[] }> = {};
+    fx.forEach(r => { const i = mIdx[r[1]]; if (i == null) return; const o = cur[r[2]] || (cur[r[2]] = { f: months.map(() => 0), w: months.map(() => 0) }); o.f[i] += r[3]; o.w[i] += r[4]; });
+    const fxList = Object.entries(cur).map(([c, o]) => {
+      const rate = months.map((_, i) => (o.f[i] > 0 ? o.w[i] / o.f[i] : null));
+      const bi = [ci - 3, ci - 2, ci - 1].filter(i => i >= 0);
+      const bf = sum(bi.map(i => o.f[i])), bw = sum(bi.map(i => o.w[i]));
+      const base = bf > 0 ? bw / bf : null;
+      const rc = rate[ci];
+      const impact = rc != null && base != null ? o.f[ci] * (rc - base) : null;
+      return { c, fCur: o.f[ci], wCur: o.w[ci], rc, base, impact, rate, fAll: sum(o.f) };
+    }).filter(x => x.fAll > 0).sort((a, b) => b.wCur - a.wCur || b.fAll - a.fAll);
+    const fxImpact = sum(fxList.map(x => x.impact || 0));
+
+    return { invTotal, byBk, byUnitInv, invTop, cogsM, salesM, avgCogs, turnDays, old180, byItem, byCust, custCur, custCurTot, top5, top1, top5Line, pM, aM, rateM, vendors, payeeList, fxList, fxImpact };
+  }, [ops, ok, months, ci]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [mTab, setMTab] = useState<'item' | 'cust'>('item');
+  const curL = ymL(cur);
+
+  return (
+    <section className="sec ops">
+      <style>{`
+        .ops .ops-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        .ops .ops-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;min-width:0;display:grid;gap:12px;align-content:start}
+        .ops .ops-card.wide{grid-column:1 / -1}
+        .ops .ops-card h3{margin:0;font-size:15px;font-weight:700;display:flex;align-items:center;gap:4px}
+        .ops .ops-card h3 .no{display:inline-flex;width:20px;height:20px;border-radius:6px;background:var(--brand-soft);color:var(--brand);font:700 12px var(--font-num);align-items:center;justify-content:center;margin-right:4px}
+        .ops .ops-card .lead{margin:-6px 0 0;font-size:12.5px;color:var(--fg-3)}
+        .ops .ops-kpis{display:flex;flex-wrap:wrap;gap:8px 22px}
+        .ops .ops-kpi{display:grid;gap:1px;min-width:0}
+        .ops .ops-kpi span{font-size:11.5px;color:var(--fg-3)}
+        .ops .ops-kpi b{font:800 20px/1.15 var(--font-num);font-variant-numeric:tabular-nums}
+        .ops .ops-kpi b.neg{color:var(--neg)}.ops .ops-kpi b.pos{color:#2c7f2c}
+        .ops .ops-kpi small{font-size:11.5px;color:var(--fg-3)}
+        .ops table{width:100%;border-collapse:collapse;font-size:12.5px}
+        .ops th{font-weight:500;color:var(--fg-3);font-size:11.5px;text-align:right;padding:5px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+        .ops th:first-child,.ops td:first-child{text-align:left}
+        .ops td{padding:6px;border-bottom:1px solid var(--line);text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+        .ops td:first-child{font-family:var(--font-body);font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+        .ops tr.tot td{font-weight:800;background:var(--surface-2)}
+        .ops tr.sub td{color:var(--fg-2);font-weight:400}.ops tr.sub td:first-child{padding-left:18px;font-weight:400}
+        .ops tr.warn td{background:#fff5f5}
+        .ops .neg{color:var(--neg)}.ops .pos{color:#2c7f2c}.ops .mut{color:var(--fg-3)}
+        .ops .ops-stack{display:flex;height:16px;border-radius:999px;overflow:hidden;background:var(--surface-2)}
+        .ops .ops-stack i{display:block;height:100%}
+        .ops .ops-lg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px}
+        .ops .ops-lg span i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+        .ops .ops-mb-lg{display:flex;gap:14px;font-size:11.5px;color:var(--fg-3);margin-bottom:4px}.ops .ops-mb-lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+        .ops .ops-mb-row{display:flex;gap:4px;align-items:flex-end}
+        .ops .ops-mb-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center}
+        .ops .ops-mb-bars{height:64px;width:100%;display:flex;gap:2px;align-items:flex-end;justify-content:center}
+        .ops .ops-mb-bars i{display:block;flex:1;max-width:18px;border-radius:3px 3px 0 0}
+        .ops .ops-mb-col small{font-size:10.5px;color:var(--fg-3);margin-top:3px}.ops .ops-mb-col small.on{color:var(--fg);font-weight:700}
+        .ops .ops-mb-col b{font:600 10.5px var(--font-num);color:var(--fg-2);white-space:nowrap}
+        .ops .ops-note{font-size:11.5px;color:var(--fg-3);line-height:1.5}
+        .ops .ops-alert{display:flex;flex-wrap:wrap;gap:6px}
+        .ops .ops-alert span{font-size:12px;background:#fdeaea;color:var(--neg);border-radius:999px;padding:2px 9px}
+        .ops .ops-rk{display:grid;grid-template-columns:18px minmax(0,1fr) 90px 52px 52px;gap:8px;align-items:center;font-size:12.5px;padding:3px 0}
+        .ops .ops-rk .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+        .ops .ops-rk>span:nth-child(n+3){text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
+        .ops .ops-msg{padding:14px;border:1px dashed var(--line-2);border-radius:10px;font-size:13px;color:var(--fg-2);background:var(--surface-2)}
+        @media (max-width:1000px){.ops .ops-grid{grid-template-columns:1fr}}
+        @media (max-width:820px){.ops .ops-card{padding:14px 12px}.ops .ops-kpi b{font-size:18px}.ops .ops-mb-col b{display:none}.ops .ops-rk{grid-template-columns:16px minmax(0,1fr) 80px 46px}.ops .ops-rk>:nth-child(5){display:none}.ops .tbl-wrap td:first-child,.ops .tbl-wrap th:first-child{position:sticky;left:0;z-index:1;background:var(--surface);max-width:130px;box-shadow:1px 0 0 var(--line)}.ops tr.tot td:first-child{background:var(--surface-2)}.ops tr.warn td:first-child{background:#fff5f5}}
+      `}</style>
+      <h2>운영 지표</h2>
+      <p className="lead">{curL} 기준 · 조회 기간 {ymL(months[0])} ~ {curL}. 숫자를 누르지 않아도 되도록 각 카드에 결론을 먼저 적었습니다. (?) 를 누르면 계산 방법이 나옵니다.</p>
+      {err && <div className="ops-msg" style={{ marginBottom: 14 }}>{err === 'NOFN' ? '운영 지표 ②~⑤·⑦ 은 DB 함수가 필요합니다. 관리자가 Supabase SQL Editor 에서 0006 → 0008 파일을 실행하면 표시됩니다.' : '운영 지표를 불러오지 못했습니다: ' + err}</div>}
+      <div className="ops-grid">
+
+        {/* ① 인당 */}
+        <div className="ops-card wide">
+          <h3><span className="no">1</span>인당 수익·비용·순수익<HelpDot id="ops.percap" /></h3>
+          <p className="lead">{unitLbl} 크기 차이를 빼고 1명이 얼마를 벌고 쓰는지 봅니다. {model.realized ? '수익 = 실현 수익.' : '수익 = 배분 수익(지원 포함), 비용 = 전표 + 지원 부담.'}</p>
+          {!perCap.hasEmp ? <div className="ops-msg">기간 안에 [월/부서별 인원] 데이터가 없습니다.</div> : <>
+            <div className="ops-kpis">
+              <Kpi l={`${curL} 인원`} v={fmt(perCap.total.emp) + '명'} s={`기간 입사 ${perCap.total.inn} · 퇴사 ${perCap.total.out} · 기간 초 ${fmt(perCap.total.empStart)}명`} />
+              <Kpi l="인당 수익" v={perCap.total.pm == null ? '-' : kor(perCap.total.pm)} />
+              <Kpi l="인당 비용" v={perCap.total.pc == null ? '-' : kor(perCap.total.pc)} />
+              <Kpi l="인당 순수익" v={perCap.total.pn == null ? '-' : sgn(perCap.total.pn) + kor(Math.abs(perCap.total.pn))} tone={perCap.total.pn == null ? undefined : perCap.total.pn >= 0 ? 'pos' : 'neg'} s={perCap.total.avgN == null ? undefined : `기간 월평균 ${sgn(perCap.total.avgN)}${kor(Math.abs(perCap.total.avgN))}`} />
+            </div>
+            <div className="tbl-wrap"><table>
+              <thead><tr><th>{unitLbl}</th><th>인원</th><th>입사·퇴사(기간)</th><th>인당 수익</th><th>인당 비용</th><th>인당 순수익</th><th>기간 월평균 인당 순수익</th><th style={{ width: 130 }}>인당 순수익 추이</th></tr></thead>
+              <tbody>
+                {perCap.rows.map(r => (
+                  <tr key={r.name}>
+                    <td>{r.name}</td><td>{fmt(r.emp)}</td><td className="mut">{r.inn || r.out ? `+${r.inn} / −${r.out}` : '-'}</td>
+                    <td>{r.pm == null ? '-' : fmt(r.pm)}</td><td>{r.pc == null ? '-' : fmt(r.pc)}</td>
+                    <td className={r.pn == null ? '' : r.pn >= 0 ? 'pos' : 'neg'}>{r.pn == null ? '-' : fmt(r.pn)}</td>
+                    <td className={r.avgN == null ? '' : r.avgN >= 0 ? 'pos' : 'neg'}>{r.avgN == null ? '-' : fmt(r.avgN)}</td>
+                    <td><Line vals={r.line} color={(r.pn ?? 0) >= 0 ? '#2c7f2c' : '#d93c3c'} /></td>
+                  </tr>
+                ))}
+                <tr className="tot"><td>전체</td><td>{fmt(perCap.total.emp)}</td><td className="mut">{perCap.total.inn || perCap.total.out ? `+${perCap.total.inn} / −${perCap.total.out}` : '-'}</td><td>{perCap.total.pm == null ? '-' : fmt(perCap.total.pm)}</td><td>{perCap.total.pc == null ? '-' : fmt(perCap.total.pc)}</td><td className={(perCap.total.pn ?? 0) >= 0 ? 'pos' : 'neg'}>{perCap.total.pn == null ? '-' : fmt(perCap.total.pn)}</td><td>{perCap.total.avgN == null ? '-' : fmt(perCap.total.avgN)}</td><td><Line vals={perCap.total.line} color="#64748b" /></td></tr>
+              </tbody>
+            </table></div>
+          </>}
+        </div>
+
+        {/* ② 재고 */}
+        <div className="ops-card wide">
+          <h3><span className="no">2</span>재고 회전일수 · 오래된 재고<HelpDot id="ops.stock" /></h3>
+          {!db ? <Loading err={err} /> : <>
+            <p className="lead">{db.turnDays == null ? '최근 3개월 매출원가가 없어 회전일수를 계산할 수 없습니다.' : `지금 재고는 약 ${db.turnDays}일 치 판매량입니다.`} {db.invTotal > 0 ? `입고 후 180일 넘은 재고가 ${kor(db.old180)}(${pct1(db.old180, db.invTotal)}%) 입니다.` : ''}</p>
+            <div className="ops-kpis">
+              <Kpi l="재고금액 (LOT 기준, 지금)" v={kor(db.invTotal)} />
+              <Kpi l="월평균 매출원가 (최근 3개월)" v={kor(db.avgCogs)} />
+              <Kpi l="재고 회전일수" v={db.turnDays == null ? '-' : db.turnDays + '일'} tone={db.turnDays != null && db.turnDays > 180 ? 'neg' : undefined} />
+            </div>
+            {db.invTotal > 0 && <>
+              <div className="ops-stack">{BK.map(k => db.byBk[k]?.amt ? <i key={k} title={`${BK_L[k]} ${fmt(db.byBk[k].amt)}원`} style={{ width: db.byBk[k].amt / db.invTotal * 100 + '%', background: BK_C[k] }} /> : null)}</div>
+              <div className="ops-lg">{BK.map(k => db.byBk[k]?.amt ? <span key={k}><i style={{ background: BK_C[k] }} />{BK_L[k]} {kor(db.byBk[k].amt)} · {db.byBk[k].n} LOT</span> : null)}</div>
+              <div className="tbl-wrap"><table>
+                <thead><tr><th>{unitLbl}</th><th>재고금액</th><th>90일 이하</th><th>91~180일</th><th>181일 이상</th></tr></thead>
+                <tbody>{Object.entries(db.byUnitInv).map(([u, o]) => ({ u, o, t: sum(Object.values(o)) })).sort((a, b) => b.t - a.t).map(({ u, o, t }) => (
+                  <tr key={u}><td>{u}</td><td>{fmt(t)}</td><td>{fmt(o['0-90'] || 0)}</td><td>{fmt(o['91-180'] || 0)}</td><td className={(o['181-365'] || 0) + (o['365+'] || 0) > 0 ? 'neg' : ''}>{fmt((o['181-365'] || 0) + (o['365+'] || 0))}</td></tr>
+                ))}</tbody>
+              </table></div>
+              {db.invTop.length > 0 && <>
+                <div className="ops-note" style={{ marginBottom: -6 }}>입고 후 오래된 재고 LOT (금액 큰 순)</div>
+                <div className="tbl-wrap"><table>
+                  <thead><tr><th>품목</th><th>LOT</th><th>{unitLbl}</th><th>입고일</th><th>마지막 판매</th><th>경과일</th><th>재고금액</th></tr></thead>
+                  <tbody>{db.invTop.slice(0, 8).map((r, i) => <tr key={i}><td title={r[2]}>{r[2]}</td><td className="mut">{r[3]}</td><td className="mut" style={{ fontFamily: 'var(--font-body)' }}>{unitOf(r[0])}</td><td>{fmtDate(r[4])}</td><td className="mut">{fmtDate(r[5])}</td><td className={r[8] > 180 ? 'neg' : ''}>{fmt(r[8])}일</td><td>{fmt(r[7])}</td></tr>)}</tbody>
+                </table></div>
+              </>}
+            </>}
+          </>}
+        </div>
+
+        {/* ③ 마진율 */}
+        <div className="ops-card wide">
+          <h3><span className="no">3</span>품목 · 청구처별 마진율<HelpDot id="ops.margin" /></h3>
+          {!db ? <Loading err={err} /> : (() => {
+            const list = (mTab === 'item' ? db.byItem : db.byCust).filter(x => x.sCur !== 0 || x.alert).sort((a, b) => Number(b.alert) - Number(a.alert) || b.sCur - a.sCur);
+            const alerts = list.filter(x => x.alert);
+            const totS = sum(db.salesM.slice(-1)), totC = sum(db.cogsM.slice(-1));
+            const pS = sum(db.salesM.slice(0, -1)), pC = sum(db.cogsM.slice(0, -1));
+            const rNow = totS > 0 ? (totS - totC) / totS * 100 : null, rPrev = pS > 0 ? (pS - pC) / pS * 100 : null;
+            return <>
+              <p className="lead">{rNow == null ? `${curL} 판매가 없습니다.` : `${curL} 전체 마진율 ${rNow.toFixed(1)}%${rPrev != null ? ` (이전 ${prevMonths.length}개월 ${rPrev.toFixed(1)}%, ${sgn(rNow - rPrev)}${Math.abs(rNow - rPrev).toFixed(1)}%p)` : ''}.`} {alerts.length ? `마진율이 평소보다 5%p 넘게 떨어진 ${mTab === 'item' ? '품목' : '청구처'} ${alerts.length}곳을 맨 위에 표시했습니다.` : '평소보다 크게 떨어진 곳은 없습니다.'}</p>
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <span className="seg"><button className={mTab === 'item' ? 'on' : ''} onClick={() => setMTab('item')}>품목별</button><button className={mTab === 'cust' ? 'on' : ''} onClick={() => setMTab('cust')}>청구처별</button></span>
+                {alerts.length > 0 && <div className="ops-alert">{alerts.slice(0, 6).map(a => <span key={a.k}>▼ {a.k.replace(/ \([^)]*\)$/, '')} {a.diff!.toFixed(1)}%p</span>)}</div>}
+              </div>
+              <div className="tbl-wrap" style={{ maxHeight: 420, overflow: 'auto' }}><table>
+                <thead><tr><th>{mTab === 'item' ? '품목' : '청구처'}</th><th>{curL} 매출</th><th>매출 비중</th><th>{curL} 마진</th><th>{curL} 마진율</th><th>이전 {prevMonths.length}개월 마진율</th><th>변화</th><th style={{ width: 130 }}>월별 마진율</th></tr></thead>
+                <tbody>{list.slice(0, 30).map(x => (
+                  <tr key={x.k} className={x.alert ? 'warn' : ''}>
+                    <td title={x.k}>{x.k}</td><td>{fmt(x.sCur)}</td><td className="mut">{x.share.toFixed(1)}%</td><td className={x.mCur < 0 ? 'neg' : ''}>{fmt(x.mCur)}</td>
+                    <td>{x.curR == null ? '-' : x.curR.toFixed(1) + '%'}</td><td className="mut">{x.base == null ? '-' : x.base.toFixed(1) + '%'}</td>
+                    <td className={x.diff == null ? '' : x.diff < 0 ? 'neg' : 'pos'}>{x.diff == null ? '-' : sgn(x.diff) + Math.abs(x.diff).toFixed(1) + '%p'}</td>
+                    <td><Line vals={x.rate} color={x.alert ? '#d93c3c' : C.margin} /></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+              {list.length > 30 && <div className="ops-note">{curL} 매출 큰 순 30개만 보입니다 (전체 {list.length}개).</div>}
+            </>;
+          })()}
+        </div>
+
+        {/* ④ 거래처 집중도 */}
+        <div className="ops-card">
+          <h3><span className="no">4</span>거래처 집중도<HelpDot id="ops.conc" /></h3>
+          {!db ? <Loading err={err} /> : <>
+            <p className="lead">{db.top5 == null ? `${curL} 판매가 없습니다.` : `${curL} 매출의 ${db.top5.toFixed(1)}%가 상위 5개 청구처에서 나왔습니다. 가장 큰 한 곳이 ${db.top1!.toFixed(1)}% 입니다.`}</p>
+            <div className="ops-kpis">
+              <Kpi l="상위 5곳 비중" v={db.top5 == null ? '-' : db.top5.toFixed(1) + '%'} tone={db.top5 != null && db.top5 >= 70 ? 'neg' : undefined} />
+              <Kpi l="1위 비중" v={db.top1 == null ? '-' : db.top1.toFixed(1) + '%'} tone={db.top1 != null && db.top1 >= 30 ? 'neg' : undefined} />
+              <Kpi l={`${curL} 거래 청구처`} v={db.custCur.length + '곳'} />
+              <div className="ops-kpi"><span>상위 5곳 비중 추이</span><Line vals={db.top5Line} color="#7c3aed" w={140} h={34} /></div>
+            </div>
+            <div>
+              <ListHead cls="ops-rk" cols={['', '청구처', `>${curL} 매출`, '>비중', '>누적']} />
+              {(() => { let acc = 0; return db.custCur.slice(0, 10).map((x, i) => { acc += x.sCur; return <div key={x.k} className="ops-rk"><span className="help">{i + 1}</span><span className="nm" title={x.k}>{x.k}</span><span>{fmt(x.sCur)}</span><span>{(x.sCur / db.custCurTot * 100).toFixed(1)}%</span><span className="mut">{(acc / db.custCurTot * 100).toFixed(0)}%</span></div>; }); })()}
+            </div>
+          </>}
+        </div>
+
+        {/* ⑤ 부대비용률 */}
+        <div className="ops-card">
+          <h3><span className="no">5</span>수입 부대비용률<HelpDot id="ops.landed" /></h3>
+          {!db ? <Loading err={err} /> : (() => {
+            const rc = db.rateM[ci]; const ps = sum(db.pM), as = sum(db.aM); const avg = ps > 0 ? Math.round(as / ps * 1000) / 10 : null;
+            return <>
+              <p className="lead">{rc == null ? `${curL} 입고분이 없습니다.` : `${curL} 입고분의 부대비용은 구매금액의 ${rc}% 입니다${avg != null ? ` (기간 평균 ${avg}%)` : ''}.`}</p>
+              <div className="ops-kpis">
+                <Kpi l={`${curL} 부대비용률`} v={rc == null ? '-' : rc + '%'} tone={rc != null && avg != null && rc > avg * 1.2 ? 'neg' : undefined} />
+                <Kpi l={`${curL} 부대비용`} v={kor(db.aM[ci])} s={`구매 ${kor(db.pM[ci])}`} />
+                <Kpi l="기간 평균" v={avg == null ? '-' : avg + '%'} />
+              </div>
+              <MonthBars months={months} a={db.rateM} aLbl="부대비용률(%)" fmtV={v => v.toFixed(1)} colorA="#0ea5e9" />
+              <div className="tbl-wrap"><table>
+                <thead><tr><th>수입처 (기간)</th><th>구매금액</th><th>부대비용</th><th>비율</th></tr></thead>
+                <tbody>{db.vendors.slice(0, 8).map(v => <tr key={v.k}><td title={v.k}>{v.k}</td><td>{fmt(v.p)}</td><td>{fmt(v.a)}</td><td className={v.r != null && avg != null && v.r > avg * 1.2 ? 'neg' : ''}>{v.r == null ? '-' : v.r.toFixed(1) + '%'}</td></tr>)}</tbody>
+              </table></div>
+              {db.payeeList.length > 0 && <div>
+                <ListHead cls="ops-rk" cols={['', '지급처 (청구월 기준)', '>기간 합계', `>${Number(cur.slice(4))}월`, '>전월']} />
+                {db.payeeList.slice(0, 8).map((x, i) => <div key={x.k} className="ops-rk"><span className="help">{i + 1}</span><span className="nm" title={x.k}>{x.k}</span><span>{fmt(x.sum)}</span><span>{kor(x.cur)}</span><span className="mut">{kor(x.prev)}</span></div>)}
+              </div>}
+            </>;
+          })()}
+        </div>
+
+        {/* ⑥ 고정비 대비 수익 */}
+        <div className="ops-card">
+          <h3><span className="no">6</span>고정비 대비 수익<HelpDot id="ops.fixed" /></h3>
+          {(() => {
+            const c = fixed.cover[ci], gap = fixed.rev[ci] - fixed.fx[ci];
+            return <>
+              <p className="lead">{fixed.fx[ci] > 0 ? (gap >= 0 ? `${curL} 수익이 고정비를 ${c}% 덮었습니다. 고정비를 내고 ${kor(gap)} 남았습니다.` : `${curL} 수익이 고정비의 ${c}% 입니다. 고정비만으로 ${kor(-gap)} 모자랍니다.`) : '기준월 고정성 비용이 없습니다.'}</p>
+              <div className="ops-kpis">
+                <Kpi l="고정비 커버율" v={c == null ? '-' : c + '%'} tone={c == null ? undefined : c >= 100 ? 'pos' : 'neg'} s="수익 ÷ 고정비" />
+                <Kpi l={`${curL} 고정비`} v={kor(fixed.fx[ci])} s={`전표 비용의 ${pct1(fixed.fx[ci], fixed.vc[ci]) ?? '-'}%`} />
+                <Kpi l="수익 − 고정비" v={sgn(gap) + kor(Math.abs(gap))} tone={gap >= 0 ? 'pos' : 'neg'} />
+              </div>
+              <MonthBars months={months} a={fixed.rev} b={fixed.fx} aLbl="수익" bLbl="고정비" />
+              {fixed.accList.length > 0 && <div>
+                <ListHead cls="ops-rk" cols={['', `${curL} 고정비 계정`, '>금액', '>비중', '']} />
+                {fixed.accList.slice(0, 8).map(([a, v], i) => <div key={a} className="ops-rk"><span className="help">{i + 1}</span><span className="nm">{a.replace(/^\((판|제)\)/, '')}</span><span>{fmt(v)}</span><span className="mut">{pct1(v, fixed.fx[ci]) ?? '-'}%</span><span /></div>)}
+              </div>}
+            </>;
+          })()}
+        </div>
+
+        {/* ⑦ 환율 */}
+        <div className="ops-card">
+          <h3><span className="no">7</span>환율 영향<HelpDot id="ops.fx" /></h3>
+          {!db ? <Loading err={err} /> : !db.fxList.length ? <div className="ops-msg">기간 안에 외화 구매가 없거나, 구매 데이터에 통화(CURRNAME)·단가(PRICE)·환율(EXRATE) 열이 없습니다.</div> : <>
+            <p className="lead">{db.fxList.some(x => x.impact != null) ? `${curL} 외화 구매를 직전 3개월 평균 환율로 샀다면 원가가 ${kor(Math.abs(db.fxImpact))} ${db.fxImpact >= 0 ? '적었습니다 (환율 때문에 원가 상승)' : '많았습니다 (환율 덕분에 원가 하락)'}.` : `${curL} 외화 구매가 없거나 비교할 직전 3개월 구매가 없습니다.`}</p>
+            <div className="ops-kpis">
+              <Kpi l="환율 영향 (기준월)" v={sgn(db.fxImpact) + kor(Math.abs(db.fxImpact))} tone={db.fxImpact > 0 ? 'neg' : db.fxImpact < 0 ? 'pos' : undefined} s="+ 는 원가 상승" />
+              <Kpi l={`${curL} 외화 구매 (원화)`} v={kor(sum(db.fxList.map(x => x.wCur)))} />
+            </div>
+            <div className="tbl-wrap"><table>
+              <thead><tr><th>통화</th><th>{curL} 외화 구매</th><th>{curL} 평균 환율</th><th>직전 3개월 평균</th><th>영향(원)</th><th style={{ width: 120 }}>월별 평균 환율</th></tr></thead>
+              <tbody>{db.fxList.map(x => <tr key={x.c}><td>{x.c}</td><td>{fmt(x.fCur)}</td><td>{x.rc == null ? '-' : x.rc.toFixed(2)}</td><td className="mut">{x.base == null ? '-' : x.base.toFixed(2)}</td><td className={x.impact == null ? '' : x.impact > 0 ? 'neg' : 'pos'}>{x.impact == null ? '-' : sgn(x.impact) + fmt(Math.abs(x.impact))}</td><td><Line vals={x.rate} color="#0ea5e9" /></td></tr>)}</tbody>
+            </table></div>
+          </>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Loading({ err }: { err: string | null }) {
+  return <div className="ops-msg">{err ? 'DB 함수가 준비되면 표시됩니다.' : '불러오는 중…'}</div>;
+}
