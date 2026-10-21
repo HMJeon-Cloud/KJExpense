@@ -1989,10 +1989,11 @@ export default function init() {
       const price = pickKey(rows, [/^price$/, /^단가$/, /^외화단가$/, /price/, /단가/], ['원화', 'won', 'exrate', '환율', '제조']); // 구매 단가(Price)
       const exrate = pickKey(rows, [/^exrate$/, /^환율$/, /exrate/, /환율/]); // 환율(ExRate)
       const impkind = pickKey(rows, [/^smimpkindname$/, /^smimpkind$/, /^수입구분$/, /smimpkind/, /수입구분/]); // 수입구분(폐기 제외용)
+      const imptype = pickKey(rows, [/^smimptypename$/, /^smimptype$/, /smimptype/]); // 입출고 유형(기타출고 제외용)
       const date = kind === 'purchase'
         ? pickKey(rows, [/^permitdate$/, /^수입면장일자$/, /^입고일자?$/, /^구매일자?$/, /permitdate/, /면장일/, /입고일/, /구매일/, /발주일/, /^일자$/, /date/])
         : pickKey(rows, [/^billdate$/, /^청구일자$/, /^판매일자$/, /billdate/, /청구일자/, /판매일자/, /발행일/, /^일자$/, /date/]);
-      return { code, name, qty, unit, amt, price, exrate, impkind, date, kind };
+      return { code, name, qty, unit, amt, price, exrate, impkind, imptype, date, kind };
     }
     // 분기 유틸: 'YYYYMM' → 분기 인덱스 / 라벨
     // 월 유틸: 'YYYYMM' ↔ 월 인덱스
@@ -2028,6 +2029,7 @@ export default function init() {
         if (!c) continue;
         // ★ 수입구분이 '폐기'인 행은 제외 (판매가·수량 집계 모두)
         if (String(val(p, P.impkind)).trim() === '폐기') continue;
+        if (String(val(p, P.imptype)).replace(/\s+/g, '') === '기타출고') continue; // ★ 기타출고는 구매가 아님
         const e = ent(c);
         if (!e.name) e.name = String(val(p, P.name)).trim();
         if (!e.asset) e.asset = String(gv(p, ['ASSETNAME', 'AssetName', '자산분류', '자산명'])).trim(); // 자산분류

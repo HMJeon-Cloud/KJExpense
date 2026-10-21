@@ -729,7 +729,7 @@ export default function init() {
       const sell = ia.sellBuyOf(code, lotMonth(lotObj)); // 판매가(구매)
       if (sell == null) return 0;
       const unitWon = (lotObj.totalPQty || 0) > 0 ? (lotObj.totalPAmt || 0) / lotObj.totalPQty : 0; // 단가(원)
-      return Math.round((sell - unitWon) * (lotObj.totalSQty || 0)); // (판매가(구매) − 단가(원)) × 판매수량
+      return Math.round((sell - unitWon) * ((lotObj.totalSQty || 0) + (lotObj.totalOutQty || 0))); // (판매가(구매) − 단가(원)) × (판매수량 + 기타출고수량)
     };
     // 제조원가 단가 = LOT 구매금액 ÷ 구매수량
     const mfgUnitOf = lotObj => (lotObj.totalPQty || 0) > 0 ? (lotObj.totalPAmt || 0) / lotObj.totalPQty : 0;
@@ -954,10 +954,16 @@ export default function init() {
         const disposalMap = Object.create(null);
         const pDataMap = Object.create(null);
         let noLotIdx = 0;
+        const otherOutRaw = []; // ★ 기타출고 (SMImpTypeName = '기타출고'): 구매가 아니라 재고에서 나간 수량
         pDataRaw.forEach(p => {
           const impKind = cleanString(getVal(p, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND'));
           const lot = cleanString(getVal(p, 'LOTNO')).toUpperCase();
           const itemNo = cleanString(getVal(p, 'ITEMNOCHK', 'ITEMNO', '품번')).toUpperCase();
+          if (cleanString(getVal(p, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분')) === '기타출고') {
+            const itemAlt = cleanString(getVal(p, 'ITEMNO', 'ITEMNOCHK', '품번')).toUpperCase();
+            if (lot) otherOutRaw.push({ row: p, keys: [lot + "_" + itemNo, lot + "_" + itemAlt].filter((v, i, a) => v && a.indexOf(v) === i), qty: Math.abs(parseNum(getVal(p, 'QTY', '수량'))) });
+            return;
+          }
           if (impKind === '폐기') {
             const key = lot + "_" + itemNo;
             if (!disposalMap[key]) disposalMap[key] = [];
@@ -1031,6 +1037,14 @@ export default function init() {
           if (!k) return;
           matUseMap[k] = (matUseMap[k] || 0) + Math.abs(parseNum(__matPick(r, ['Qty', '투입수량'])));
         });
+        // ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번 ItemNo 로)
+        const otherOutMap = Object.create(null); // LOT 키 → { qty, rows }
+        otherOutRaw.forEach(o => {
+          const k = lotKeyOf(o.keys);
+          if (!k) return;
+          const e = otherOutMap[k] || (otherOutMap[k] = { qty: 0, rows: [] });
+          e.qty += o.qty; e.rows.push(o.row);
+        });
         // ★ 폐기 수량: 폐기 행의 (LOT + 품번 후보) 로 LOT 하나에만 배정
         const disposalByKey = Object.create(null);
         Object.keys(disposalMap).forEach(key => {
@@ -1057,7 +1071,7 @@ export default function init() {
             if (!pr.length) continue;
             const pQty = pr.reduce((a, r) => a + parseNum(getVal(r, 'QTY', '수량')), 0);
             const sQty = (sDataMap[k] || []).reduce((a, r) => a + parseNum(getVal(r, 'QTY', '수량')), 0);
-            const left = pQty - sQty - (matUseMap[k] || 0);   // 생산 투입분은 이미 빠진 잔량
+            const left = pQty - sQty - (matUseMap[k] || 0) - ((otherOutMap[k] && otherOutMap[k].qty) || 0);   // 생산 투입·기타출고분은 이미 빠진 잔량
             if (left <= 0) continue;
             if (Math.abs(left - dQty) > Math.max(1e-6, dQty * 1e-6)) continue;
             disposalInfo[k] = { qty: dQty, matched: true, all: sQty <= 1e-9 }; // 판매가 전혀 없으면 전량 폐기
@@ -1171,6 +1185,8 @@ export default function init() {
           const disposals = disposalMap[lotNo + "_" + itemNo] || disposalMap[String(lotKey)] || [];
           const totalDisposalQty = disposalByKey[lotKey] || 0;   // LOT + 품번 으로 맞춘 폐기 수량
           const totalMatQty = matUseMap[lotKey] || 0;            // 생산에 투입된 수량 (실자재투입)
+          const totalOutQty = (otherOutMap[lotKey] && otherOutMap[lotKey].qty) || 0;   // 기타출고 수량
+          const outRows = (otherOutMap[lotKey] && otherOutMap[lotKey].rows) || [];
           let totalSQty = 0,
             totalSAmt = 0,
             sDateRaw = '';
@@ -1198,7 +1214,7 @@ export default function init() {
           const cogs = totalSQty * marginUnit; // 매출원가 = 제조원가(입고월) × 판매수량
           const margin = totalSAmt - cogs;      // 실현 수익 = 판매금액 − 제조원가 × 판매수량
           // 💡 소수점 오차 방지를 위해 toFixed(4) 적용하여 재고 수량 계산
-          const inventoryQty = Number((totalPQty - totalSQty - totalDisposalQty - totalMatQty).toFixed(4));
+          const inventoryQty = Number((totalPQty - totalSQty - totalDisposalQty - totalMatQty - totalOutQty).toFixed(4));
           const inventoryAmt = inventoryQty > 0 ? inventoryQty * unitCost : 0;
           const searchKeywords = {
             itemNo,
@@ -1229,6 +1245,8 @@ export default function init() {
             totalSAmt,
             totalDisposalQty,
             totalMatQty,
+            totalOutQty,
+            outRows,
             sales: totalSAmt,
             cogs,
             inventory: inventoryAmt,
@@ -1417,6 +1435,14 @@ export default function init() {
                 byProfit[pc.key][m] = (byProfit[pc.key][m] || 0) + x;
               });
             });
+            // ★ 기타출고: 판매가 아니므로 실현 수익·합성·영업 이윤은 없고, 구매 부서 이윤만 (판매가(구매) − 단가) × 출고수량, 출고월에
+            if (!isSyn) (lo.outRows || []).forEach(o => {
+              const om = String(getVal(o, 'PERMITDATE', '수입면장일자', '구매일자') || '').replace(/[^0-9]/g, '').slice(0, 6) || lym;
+              if (om.length !== 6) return;
+              const pvo = computeProfits({ noSales: true, tradeAsset: true, isSynth: false, itemNo: kw.itemNo || '', lotNo: lo.lotNo || '', ym: lym, lotDept: dp,
+                sellBuy: sellBuy, sellSyn: sellSyn, proc: procU, unitWon: unitWon, saleQty: Math.abs(parseNum(getVal(o, 'QTY', '수량'))), saleAmt: 0 });
+              PROFIT_COLS.forEach(pc => { const x = pvo[pc.key]; if (x == null) return; byProfit[pc.key][om] = (byProfit[pc.key][om] || 0) + x; });
+            });
           });
           if (window.KJHub) {
             const jsRes = { marginMonthlyFull: fullMonthly, marginMonthlyByBU: byBU, marginMonthlyByDept: byDept, profitMonthlyByGroup: byProfit };
@@ -1495,8 +1521,8 @@ export default function init() {
         const d = cleanString(getVal(s, 'BILLDATE', '청구일자', '판매일자', '일자'));
         if (d > sDateRaw) sDateRaw = d;
       });
-      const dQty = lot.totalDisposalQty || 0, mQty = lot.totalMatQty || 0;
-      const invQty = Number((pQty - sQty - dQty - mQty).toFixed(4));
+      const dQty = lot.totalDisposalQty || 0, mQty = lot.totalMatQty || 0, oQty = lot.totalOutQty || 0;
+      const invQty = Number((pQty - sQty - dQty - mQty - oQty).toFixed(4));
       const cogs = sQty * marginUnit;
       return Object.assign({}, lot, {
         pRows, sRows,
@@ -2301,6 +2327,12 @@ export default function init() {
             po.left -= q; so.left -= q;
           }
         });
+        // ★ 기타출고 분: 판매 다음 순서로 입고 건에서 차감해 "기타출고" 행으로 표시 (구매 부서 이윤만)
+        (lotObj.outRows || []).slice().sort((a, b) => (dOf(a, ['PERMITDATE', '수입면장일자', '구매일자']) || '').localeCompare(dOf(b, ['PERMITDATE', '수입면장일자', '구매일자']) || '')).forEach(o => {
+          let left = Math.abs(parseNum(getVal(o, 'QTY', '수량')));
+          ps.forEach(po => { if (left <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, left); out.push({ p: po.p, s: null, qty: q, tot: 0, outUsed: true, oRow: o }); po.left -= q; left -= q; });
+          if (left > 1e-9) out.push({ p: null, s: null, qty: left, tot: 0, outUsed: true, oRow: o }); // 입고 부족분
+        });
         // 생산 투입(실자재투입) 분: 판매 다음 순서로 입고 건에서 차감해 "생산 투입" 행으로 표시
         let __mLeft = lotObj.totalMatQty || 0;
         ps.forEach(po => { if (__mLeft <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, __mLeft); out.push({ p: po.p, s: null, qty: q, tot: 0, matUsed: true }); po.left -= q; __mLeft -= q; });
@@ -2462,7 +2494,11 @@ export default function init() {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-indigo-600 bg-indigo-50/30 border-l border-slate-100 " + bottomBorder + " font-medium",
           title: "실자재투입 내역에서 이 LOT(같은 품번)이 생산에 투입된 수량 — 재고에서 뺌"
-        }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.disposedAll) ? /*#__PURE__*/React.createElement("td", {
+        }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.outUsed) ? /*#__PURE__*/React.createElement("td", {
+          colSpan: 9,
+          className: "py-1 px-1.5 text-center text-amber-700 bg-amber-50/40 border-l border-slate-100 " + bottomBorder + " font-medium",
+          title: "구매 데이터의 SMImpTypeName '기타출고' 행 (같은 LOTNo + ItemNoChk) — 재고에서 뺌 · 구매 부서 이윤만 계산, 실현 수익 없음"
+        }, "기타출고 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '') + (seg.oRow && cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) ? " (" + cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) + ")" : "")) : (seg && seg.disposedAll) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-red-500 bg-red-50/30 border-l border-slate-100 " + bottomBorder + " font-medium"
         }, "전량 폐기") : /*#__PURE__*/React.createElement("td", {
@@ -2485,7 +2521,12 @@ export default function init() {
           const __procSeg = (__ia && __ia.ready && __ia.mfgOf) ? __ia.mfgOf(__kwL.itemNo || '', __ymSeg).proc
             : (__pSeg && getVal(__pSeg, 'PROCPRICE', '제조원가') !== '' ? parseNum(getVal(__pSeg, 'PROCPRICE', '제조원가')) : __procW);
           const __unitWonSeg = __pSeg ? parseNum(getVal(__pSeg, 'PRICE', '단가')) * parseNum(getVal(__pSeg, 'EXRATE', '환율')) : 0;
-          const __pv = (s || (__noSaleLot && isFirst)) ? computeProfits({
+          const __pv = (seg && seg.outUsed) ? (__isSynLot ? null : computeProfits({
+            noSales: true, tradeAsset: true, isSynth: false,
+            itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '', ym: __ymSeg,
+            lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg, proc: __procW,
+            unitWon: __unitWonSeg, saleQty: segQty, saleAmt: 0
+          })) : (s || (__noSaleLot && isFirst)) ? computeProfits({
             noSales: __noSaleLot,
             tradeAsset: isTradeAsset(__pSeg),
             saleDeptAsset: s ? isSaleDeptAsset(s) : false,

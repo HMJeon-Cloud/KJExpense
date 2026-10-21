@@ -12,7 +12,7 @@ select jsonb_build_object(
   'lot', (select lot from q),
   'purchase', coalesce((select jsonb_agg(jsonb_build_object(
       '품번(Chk)', public.kj_v(d, 'ITEMNOCHK'), '품번', public.kj_v(d, 'ITEMNO', '품번'), '품명', public.kj_v(d, 'ITEMNAME', '품목'),
-      '수입구분', public.kj_v(d, 'SMIMPKINDNAME', '수입구분'), '입고일', public.kj_v(d, 'PERMITDATE', '수입면장일자', '구매일자'),
+      '수입구분', public.kj_v(d, 'SMIMPKINDNAME', '수입구분'), '유형', public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE'), '입고일', public.kj_v(d, 'PERMITDATE', '수입면장일자', '구매일자'),
       '수량', public.kj_v(d, 'QTY', '수량'), '금액', public.kj_v(d, 'DOMAMT', '원화금액'), '부서', public.kj_v(d, 'DEPTNAME', '부서'),
       '자산순번', public.kj_v(d, 'ASSETSEQ', '자산순번'), 'BL', public.kj_v(d, 'BLNO', 'BL번호')) order by id)
     from r where dataset = 'purchase' and upper(public.kj_clean(public.kj_v(d, 'LOTNO'))) = (select lot from q)), '[]'::jsonb),
@@ -39,7 +39,7 @@ select jsonb_build_object(
   'matCols', (select coalesce(jsonb_agg(distinct k), '[]'::jsonb) from (select jsonb_object_keys(public.kj_norm(data)) as k from public.rows where dataset = 'matinput' limit 200) x),
   'calc', coalesce((select jsonb_agg(jsonb_build_object(
       'LOT 키', lot_key, '품번', item_no, '품명', item_name, '부서', dept, '구매수량', p_qty, '판매수량', s_qty, '폐기수량', disposal_qty,
-      '생산투입', mat_qty, '재고수량', inv_qty, '재고금액', round(inv_amt), '자산순번', asset_seq))
+      '생산투입', mat_qty, '기타출고', out_qty, '재고수량', inv_qty, '재고금액', round(inv_amt), '자산순번', asset_seq))
     from public.trade_lot_summary() t where upper(public.kj_clean(t.lot_no)) = (select lot from q)), '[]'::jsonb)
 )
 $$;

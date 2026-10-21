@@ -41,12 +41,13 @@ drop function if exists public.trade_lot_summary_raw() cascade;
 create or replace function public.trade_lot_summary_raw()
 returns table (
   lot_key text, biz_unit text, dept text, buyer text, item_no text, item_name text, vendor text, bl_no text, lot_no text, imp_kind text, asset_seq text,
-  p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric, mat_qty numeric,
+  p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric, mat_qty numeric, out_qty numeric,
   margin_unit numeric, cogs numeric, margin numeric, inv_qty numeric, inv_amt numeric, p_date text, s_date text,
   monthly jsonb,   -- 판매 발행월별 수익 {YYYYMM: Σ(_margin)}
   unit_won float8,  -- 첫 구매행의 단가(원) = PRICE × EXRATE (JS 와 같은 배정밀도)   ※ 이윤 9종용
   proc_u numeric,   -- 입고월 제조원가 (없으면 null)
-  sales jsonb       -- 판매 행 [{q, a, m(발행월), as(자산순번), dp(부서), cu(청구처)}]  ※ 이윤 9종 · 운영 지표용
+  sales jsonb,      -- 판매 행 [{q, a, m(발행월), as(자산순번), dp(부서), cu(청구처)}]  ※ 이윤 9종 · 운영 지표용
+  outs jsonb        -- 기타출고 행 [{q(|수량|), m(출고월)}]  ※ 구매 부서 이윤 (0007)
 )
 language sql stable security definer set search_path = public set jit = off as $$
 with
@@ -57,6 +58,7 @@ s0 as materialized (select id, public.kj_norm(data) as d from public.rows where 
 p1 as materialized (
   select id, d,
     public.kj_clean(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND')) as imp_kind,
+    public.kj_clean(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분')) as imp_type,   -- '기타출고' = 재고에서 나간 수량 (구매 아님)
     public.kj_clean(public.kj_v(d, 'LOTNO')) as lot_c,
     upper(public.kj_clean(public.kj_v(d, 'LOTNO'))) as lot_u,
     public.kj_clean(public.kj_v(d, 'ITEMNOCHK', 'ITEMNO', '품번')) as item_c,
@@ -78,7 +80,7 @@ p1 as materialized (
 ),
 pm as materialized (  -- 구매 LOT 맵 (폐기 제외, 금액>0 또는 수량>0)   ※ pDataMap — LOT 없는 행은 행마다 별도 키
   select *, case when lot_u <> '' then lot_u || '_' || item_u else '__NO_LOT_PURCHASE_' || (row_number() over (partition by (lot_u = '') order by id) - 1) || '__' end as key
-  from p1 where imp_kind <> '폐기' and (amt > 0 or qty > 0)
+  from p1 where imp_type <> '기타출고' and imp_kind <> '폐기' and (amt > 0 or qty > 0)
 ),
 -- ★ 같은 LOT 이라도 품번이 다르면 다른 LOT — 폐기·실자재투입은 항상 "LOT + 품번" 으로 구매 LOT 에 맞춤
 --   정확히 같은 (LOT_품번) 키가 있으면 그것, 없으면 구매 행의 보조 품번(ItemNo)으로 찾음   ※ trade.js lotKeyOf
@@ -91,7 +93,19 @@ disposal as (  -- 폐기 수량: 폐기 행마다 LOT 키 하나에 배정, Σ|q
   left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
   left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
   left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
-  where d.imp_kind = '폐기' and d.lot_u <> ''
+  where d.imp_type <> '기타출고' and d.imp_kind = '폐기' and d.lot_u <> ''
+  group by 1
+),
+-- ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번)   ※ otherOutMap
+otherout as (
+  select coalesce(k1.key, k2.key, a1.key, a2.key) as key, sum(abs(d.qty)) as oqty,
+    jsonb_agg(jsonb_build_object('q', abs(d.qty), 'm', substr(regexp_replace(d.pdate, '[^0-9]', '', 'g'), 1, 6)) order by d.id) as outs
+  from p1 d
+  left join pkeys k1 on k1.key = d.lot_u || '_' || d.item_u
+  left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
+  left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
+  left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
+  where d.imp_type = '기타출고' and d.lot_u <> '' and coalesce(k1.key, k2.key, a1.key, a2.key) is not null
   group by 1
 ),
 -- 실자재투입: 생산에 투입된 원료(자재 LOT RealLotNo + 자재 품번 MatItemNo) 수량   ※ matUseMap
@@ -188,8 +202,10 @@ h2 as (
     case when coalesce(pt.p_qty, 0) > 0 then (coalesce(pt.p_amt, 0) + coalesce(pt.alloc_exp, 0)) / pt.p_qty else 0 end as unit_cost,
     coalesce(dd.dqty, 0) as disposal_qty,  -- LOT + 품번 으로 맞춘 폐기 수량
     coalesce(mu.mqty, 0) as mat_qty,       -- 생산에 투입된 수량 (실자재투입)
+    coalesce(oo.oqty, 0) as out_qty,       -- 기타출고 수량
+    coalesce(oo.outs, '[]'::jsonb) as outs,
     substr(regexp_replace(coalesce(pt.p_date, ''), '[^0-9]', '', 'g'), 1, 6) as lot_ym
-  from head h left join ptot pt on pt.key = h.key left join disposal dd on dd.key = h.key left join matuse mu on mu.key = h.key
+  from head h left join ptot pt on pt.key = h.key left join disposal dd on dd.key = h.key left join matuse mu on mu.key = h.key left join otherout oo on oo.key = h.key
 ),
 -- 월별품목별제조원가 색인 (같은 품목·월이 여럿이면 마지막 행)   ※ profit.js mfgIdx
 mfg as materialized (
@@ -222,14 +238,14 @@ stot as (
   left join (select key, jsonb_object_agg(bym, v) as monthly from smon group by key) b on b.key = a.key
 )
 select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vendor, h3.bl_no, h3.lot_no, h3.imp_kind, h3.asset_seq,
-  h3.p_qty, h3.p_amt, h3.alloc_exp, h3.unit_cost, coalesce(st.s_qty, 0), coalesce(st.s_amt, 0), h3.disposal_qty, h3.mat_qty,
+  h3.p_qty, h3.p_amt, h3.alloc_exp, h3.unit_cost, coalesce(st.s_qty, 0), coalesce(st.s_amt, 0), h3.disposal_qty, h3.mat_qty, h3.out_qty,
   h3.margin_unit,
   coalesce(st.s_qty, 0) * h3.margin_unit as cogs,
   coalesce(st.s_amt, 0) - coalesce(st.s_qty, 0) * h3.margin_unit as margin,
-  round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty - h3.mat_qty, 4) as inv_qty,   -- 재고 = 구매 − 판매 − 폐기 − 생산 투입
-  case when round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty - h3.mat_qty, 4) > 0 then round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty - h3.mat_qty, 4) * h3.unit_cost else 0 end as inv_amt,
+  round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty - h3.mat_qty - h3.out_qty, 4) as inv_qty,   -- 재고 = 구매 − 판매 − 폐기 − 생산 투입 − 기타출고
+  case when round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty - h3.mat_qty - h3.out_qty, 4) > 0 then round(h3.p_qty - coalesce(st.s_qty, 0) - h3.disposal_qty - h3.mat_qty - h3.out_qty, 4) * h3.unit_cost else 0 end as inv_amt,
   h3.p_date, coalesce(st.s_date, ''), coalesce(st.monthly, '{}'::jsonb),
-  h3.unit_won, h3.proc_u, coalesce(st.sales, '[]'::jsonb)
+  h3.unit_won, h3.proc_u, coalesce(st.sales, '[]'::jsonb), h3.outs
 from h3 left join stot st on st.key = h3.key
 $$;
 

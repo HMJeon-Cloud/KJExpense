@@ -104,6 +104,13 @@ rows_out as (
   join mat_profit mp on mp.lot_key = l3.lot_key
   where length(l3.lym) = 6 and mp.v <> 0
   union all
+  -- (D) 기타출고: 판매가 아니므로 구매 부서 이윤만 (판매가(구매) − 단가(원)) × 출고수량, 출고월(없으면 입고월)에   ※ lo.outRows
+  select l3.lot_key_buy, o.m, public.kj_jsround((l3.sell_buy::float8 - l3.unit_won) * o.q::float8)
+  from l3, lateral (
+    select (e ->> 'q')::numeric as q, case when length(coalesce(e ->> 'm', '')) = 6 then e ->> 'm' else l3.lym end as m
+    from jsonb_array_elements(l3.outs) e
+  ) o
+  where not l3.no_sale and not l3.is_syn and l3.lot_key_buy is not null and l3.sell_buy <> 0 and length(o.m) = 6  union all
   -- (C) 판매 행별   ※ sRows.forEach → computeProfits (합성 LOT 의 구매 계열(kind=buy) 값은 제외)
   select x.k, y.ym, x.v from (
     select s.m as ym,
