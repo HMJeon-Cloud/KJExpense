@@ -124,12 +124,12 @@ p2 as materialized (
     public.kj_num(public.kj_v(d, 'EXRATE', '환율')) as rate,
     public.kj_clean(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND')) as kind,
     public.kj_clean(public.kj_v(d, 'ASSETSEQ', '자산순번')) as asset,
-    public.kj_clean(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분')) as imp_type
+    replace(coalesce(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'), ''), ' ', '') as imp_type
   from p1
 ),
 fx as (
   select dept, ym, cur, sum(f) as f, sum(f * rate) as won from p2
-  where kind <> '폐기' and imp_type <> '기타출고' and asset not in ('36', '37') and cur not in ('', 'KRW', 'WON', '원') and rate > 1 and f > 0
+  where kind not in ('폐기', '기타출고') and imp_type <> '기타출고' and asset not in ('36', '37') and cur not in ('', 'KRW', 'WON', '원') and rate > 1 and f > 0
     and ym between p_from and p_to
   group by 1, 2, 3
 )

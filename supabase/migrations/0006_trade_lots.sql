@@ -58,7 +58,8 @@ s0 as materialized (select id, public.kj_norm(data) as d from public.rows where 
 p1 as materialized (
   select id, d,
     public.kj_clean(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND')) as imp_kind,
-    public.kj_clean(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분')) as imp_type,   -- '기타출고' = 재고에서 나간 수량 (구매 아님)
+    case when '기타출고' in (replace(coalesce(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND'), ''), ' ', ''), replace(coalesce(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'), ''), ' ', ''))
+         then '기타출고' else '' end as imp_type,   -- '기타출고' (수입구분 또는 SMImpTypeName) = 재고에서 나간 수량 (구매 아님)
     public.kj_clean(public.kj_v(d, 'LOTNO')) as lot_c,
     upper(public.kj_clean(public.kj_v(d, 'LOTNO'))) as lot_u,
     public.kj_clean(public.kj_v(d, 'ITEMNOCHK', 'ITEMNO', '품번')) as item_c,

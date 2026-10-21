@@ -959,7 +959,8 @@ export default function init() {
           const impKind = cleanString(getVal(p, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND'));
           const lot = cleanString(getVal(p, 'LOTNO')).toUpperCase();
           const itemNo = cleanString(getVal(p, 'ITEMNOCHK', 'ITEMNO', '품번')).toUpperCase();
-          if (cleanString(getVal(p, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분')) === '기타출고') {
+          // ★ 기타출고: 수입구분(SMImpKindName) 또는 SMImpTypeName 값이 '기타출고'
+          if ([impKind, cleanString(getVal(p, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'))].some(v => v.replace(/\s+/g, '') === '기타출고')) {
             const itemAlt = cleanString(getVal(p, 'ITEMNO', 'ITEMNOCHK', '품번')).toUpperCase();
             if (lot) otherOutRaw.push({ row: p, keys: [lot + "_" + itemNo, lot + "_" + itemAlt].filter((v, i, a) => v && a.indexOf(v) === i), qty: Math.abs(parseNum(getVal(p, 'QTY', '수량'))) });
             return;
