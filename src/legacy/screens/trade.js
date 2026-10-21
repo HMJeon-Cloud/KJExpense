@@ -2328,15 +2328,15 @@ export default function init() {
             po.left -= q; so.left -= q;
           }
         });
+        // 생산 투입(실자재투입) 분: 판매 다음 순서로 입고 건에서 차감해 "생산 투입" 행으로 표시
+        let __mLeft = lotObj.totalMatQty || 0;
+        ps.forEach(po => { if (__mLeft <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, __mLeft); out.push({ p: po.p, s: null, qty: q, tot: 0, matUsed: true }); po.left -= q; __mLeft -= q; });
         // ★ 기타출고 분: 판매 다음 순서로 입고 건에서 차감해 "기타출고" 행으로 표시 (구매 부서 이윤만)
         (lotObj.outRows || []).slice().sort((a, b) => (dOf(a, ['PERMITDATE', '수입면장일자', '구매일자']) || '').localeCompare(dOf(b, ['PERMITDATE', '수입면장일자', '구매일자']) || '')).forEach(o => {
           let left = Math.abs(parseNum(getVal(o, 'QTY', '수량')));
           ps.forEach(po => { if (left <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, left); out.push({ p: po.p, s: null, qty: q, tot: 0, outUsed: true, oRow: o }); po.left -= q; left -= q; });
           if (left > 1e-9) out.push({ p: null, s: null, qty: left, tot: 0, outUsed: true, oRow: o }); // 입고 부족분
         });
-        // 생산 투입(실자재투입) 분: 판매 다음 순서로 입고 건에서 차감해 "생산 투입" 행으로 표시
-        let __mLeft = lotObj.totalMatQty || 0;
-        ps.forEach(po => { if (__mLeft <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, __mLeft); out.push({ p: po.p, s: null, qty: q, tot: 0, matUsed: true }); po.left -= q; __mLeft -= q; });
         // 미판매 잔량 행: 폐기와 수량이 일치하면 표시하지 않음 (총 구매수량·금액은 그대로 유지)
         const __disp = lotObj.disposalInfo;
         ps.forEach(po => { if (po.left > 1e-9) out.push({ p: po.p, s: null, qty: po.left, tot: 0, rest: true }); });
@@ -2359,6 +2359,8 @@ export default function init() {
         const d = i >= __segs.length && i < __segs.length + dispRows.length ? dispRows[i - __segs.length] : null;
         const inv = !!(seg && seg.rest); // 남은 입고분 = 재고
         const isFirst = i === 0;
+        // 자산순번 36·37 LOT 의 이윤(LOT 전체 1회)을 표시할 행: 기타출고가 아닌 첫 행 (없으면 첫 행)
+        const __pvRow = (() => { const ix = __segs.findIndex(x => !x.outUsed); return ix < 0 ? 0 : ix; })();
         const isLast = i === __segCount - 1;
         const rowSpan = __segCount;
         // 실현 수익(구매)/(합성) — LOT 값 산출 후 판매내역 행별로 판매수량 비례 안분 표시
@@ -2494,7 +2496,7 @@ export default function init() {
         }, formatNumber(Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액')) * segRatio)))) : (seg && seg.matUsed) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-indigo-600 bg-indigo-50/30 border-l border-slate-100 " + bottomBorder + " font-medium",
-          title: "실자재투입 내역에서 이 LOT(같은 품번)이 생산에 투입된 수량 — 재고에서 뺌"
+          title: "실자재투입 내역에서 이 LOT(같은 품번)이 생산에 투입된 수량 — 재고에서 뺌. 원료 수익은 생산된 제품 LOT 에서 원료 부서로 계산합니다 (여기서 또 계산하면 중복)."
         }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.outUsed) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-amber-700 bg-amber-50/40 border-l border-slate-100 " + bottomBorder + " font-medium",
@@ -2522,12 +2524,16 @@ export default function init() {
           const __procSeg = (__ia && __ia.ready && __ia.mfgOf) ? __ia.mfgOf(__kwL.itemNo || '', __ymSeg).proc
             : (__pSeg && getVal(__pSeg, 'PROCPRICE', '제조원가') !== '' ? parseNum(getVal(__pSeg, 'PROCPRICE', '제조원가')) : __procW);
           const __unitWonSeg = __pSeg ? parseNum(getVal(__pSeg, 'PRICE', '단가')) * parseNum(getVal(__pSeg, 'EXRATE', '환율')) : 0;
-          const __pv = (seg && seg.outUsed) ? (__isSynLot ? null : computeProfits({
+          const __pv = (__noSaleLot && i === __pvRow) ? computeProfits({
+            noSales: true, tradeAsset: isTradeAsset(__pSeg), itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '',
+            ym: __ymSeg, isSynth: __isSynLot, lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg,
+            proc: __procSeg != null ? __procSeg : __procW, unitWon: __unitWonSeg, saleQty: totalPQty, saleAmt: 0
+          }) : (seg && seg.outUsed) ? ((__isSynLot || __noSaleLot) ? null : computeProfits({
             noSales: true, tradeAsset: true, isSynth: false,
             itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '', ym: __ymSeg,
             lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg, proc: __procW,
             unitWon: __unitWonSeg, saleQty: segQty, saleAmt: 0
-          })) : (s || (__noSaleLot && isFirst)) ? computeProfits({
+          })) : s ? computeProfits({
             noSales: __noSaleLot,
             tradeAsset: isTradeAsset(__pSeg),
             saleDeptAsset: s ? isSaleDeptAsset(s) : false,
