@@ -195,7 +195,7 @@ export default function init() {
     const deptMonth = {}, deptMonthAcc = {};
     for (const r of agg) {
       const dept = r.dept, m = r.ym, acc = r.acc, cost = Number(r.amt) || 0;
-      if (!dept || !m || !pass(dept)) continue;
+      if (!dept || !m || !pass(dept) || isSettleAcc(acc)) continue;
       if (!deptMonth[dept]) { deptMonth[dept] = {}; deptMonthAcc[dept] = {}; }
       deptMonth[dept][m] = (deptMonth[dept][m] || 0) + cost;
       if (!deptMonthAcc[dept][m]) deptMonthAcc[dept][m] = {};
@@ -212,6 +212,33 @@ export default function init() {
     return aggregateJs(title);
   }
   try { window.KJHub = window.KJHub || {}; window.KJHub.verifyVoucher = { db: t => aggregateFromDb(t || '부서별 수익/비용'), js: t => aggregateJs(t || '부서별 수익/비용') }; } catch (e) {}
+  // ★ 결산 매출 (전표 계정 '상품매출(결산)'·'제품매출(결산)') — 분기 마감 수정분개·IFRS 반품충당부채
+  //   비용(판관·제조)이 아니므로 모든 비용 집계에서 제외하고, 국전 수익/비용(실현 수익) 화면의 수익에만 더함
+  //   금액 = 대변 − 차변 (매출 계정)   → { byDept: {부서: {YYYYMM: 금액}}, byAcc: {계정: {YYYYMM: 금액}} }
+  const SETTLE_ACCS = ['상품매출(결산)', '제품매출(결산)'];
+  const isSettleAcc = acc => SETTLE_ACCS.indexOf(String(acc == null ? '' : acc).replace(/\s+/g, '')) >= 0;
+  function settleSales(screenTitle) {
+    const rows = hub().rowsFor ? hub().rowsFor('voucher', screenTitle) : hub().data && hub().data.voucher;
+    const out = { byDept: {}, byAcc: {} };
+    if (!Array.isArray(rows)) return out;
+    _aggCache = _aggCache || {};
+    const ck = 'settle:' + screenTitle;
+    const hit = _aggCache[ck];
+    if (hit && hit.src === rows) return hit.out;
+    for (const row of rows) {
+      const acc = String(vGet(row, '계정과목', 'AccName'));
+      if (!isSettleAcc(acc)) continue;
+      const dept = String(vGet(row, '코스트센터', 'CostCCtrName') || row['부서'] || '').trim() || '미지정 부서';
+      const m = String(vGet(row, '회계일', 'AccDate')).replace(/[^0-9]/g, '').slice(0, 6);
+      if (m.length !== 6) continue;
+      const v = (parseFloat(String(vGet(row, '대변금액', 'CrAmt')).replace(/,/g, '')) || 0) - (parseFloat(String(vGet(row, '차변금액', 'DrAmt')).replace(/,/g, '')) || 0);
+      const a2 = acc.replace(/\s+/g, '');
+      (out.byDept[dept] = out.byDept[dept] || {})[m] = (out.byDept[dept][m] || 0) + v;
+      (out.byAcc[a2] = out.byAcc[a2] || {})[m] = (out.byAcc[a2][m] || 0) + v;
+    }
+    _aggCache[ck] = { src: rows, out };
+    return out;
+  }
   function aggregateJs(screenTitle) {
     const title = screenTitle || '부서별 수익/비용';
     const rows = hub().rowsFor ? hub().rowsFor('voucher', title) : hub().data && hub().data.voucher;
@@ -231,6 +258,7 @@ export default function init() {
       const costType = String(vGet(row, '비용구분', 'UMCostTypeName'));
       if (!dept) continue;
       if (acc.includes('집합') || desc.includes('제조원가대체') || desc.includes('손익대체') || desc.includes('원가대체') || dept.includes('원가계산')) continue;
+      if (isSettleAcc(acc)) continue; // 결산 매출은 비용 아님
       if (!(acc.includes('(판)') || acc.includes('(제)') || costType.includes('판관') || costType.includes('제조'))) continue;
       const m = String(vGet(row, '회계일', 'AccDate')).replace(/[^0-9]/g, '').slice(0, 6);
       if (m.length !== 6) continue;
@@ -394,6 +422,7 @@ export default function init() {
       const desc = String(vGet(row, '적요', 'Summary'));
       const costType = String(vGet(row, '비용구분', 'UMCostTypeName'));
       if (acc.includes('집합') || desc.includes('제조원가대체') || desc.includes('손익대체') || desc.includes('원가대체')) continue;
+      if (isSettleAcc(acc)) continue; // 결산 매출은 비용 아님
       if (!(acc.includes('(판)') || acc.includes('(제)') || costType.includes('판관') || costType.includes('제조'))) continue;
       const cost = (parseFloat(String(vGet(row, '차변금액', 'DrAmt')).replace(/,/g, '')) || 0) - (parseFloat(String(vGet(row, '대변금액', 'CrAmt')).replace(/,/g, '')) || 0);
       if (!out[dept]) out[dept] = {};
@@ -1508,6 +1537,24 @@ export default function init() {
       // ── (참고) 전사 실현 수익 — 화면 표시에는 쓰지 않고 데이터 유무 판단에만 사용 ──
       const buSeries = {};
       busAll.forEach(b => { buSeries[b] = months.map(m => (byBU[b] || {})[m] || 0); });
+      // 구매/판매 실현 수익만 (운영 지표용 — 결산 매출 제외)
+      const tradeMarginSeries = months.map((m, i) => busAll.reduce((s, b) => s + buSeries[b][i], 0));
+      // ★ 실현 수익 화면: 결산 매출(상품·제품매출(결산))을 그 전표 부서의 사업장(본부) 수익에 더함
+      const SET = REALIZED ? settleSales(TITLES[0]) : { byDept: {}, byAcc: {} };
+      const setHqm = hqMap();
+      const settleByDeptSer = {}, settleByHqSer = {};
+      Object.keys(SET.byDept).forEach(d => {
+        if (!deptAllowed(d)) return;
+        const ser = months.map(m => SET.byDept[d][m] || 0);
+        if (!ser.some(v => v !== 0)) return;
+        settleByDeptSer[d] = ser;
+        const hq = setHqm[norm(d)] || '기타';
+        const hs = settleByHqSer[hq] = settleByHqSer[hq] || months.map(() => 0);
+        ser.forEach((v, i) => { hs[i] += v; });
+        if (!buSeries[hq]) { buSeries[hq] = months.map(() => 0); busAll.push(hq); }
+        ser.forEach((v, i) => { buSeries[hq][i] += v; });
+      });
+      const settleSeries = months.map((m, i) => Object.keys(settleByDeptSer).reduce((s, d) => s + settleByDeptSer[d][i], 0));
       const totalMarginSeries = months.map((m, i) => busAll.reduce((s, b) => s + buSeries[b][i], 0));
       const tMargin = totalMarginSeries.reduce((s, v) => s + v, 0);
 
@@ -1533,17 +1580,20 @@ export default function init() {
         (hqDepts[hq] = hqDepts[hq] || []).push(d);
       });
       const r0 = hub().results || {}; // 실현 수익(부서별) 원본
+      // 실현 수익 화면의 부서별 수익 = 구매/판매 실현 수익 + 결산 매출
+      const mByDept = Object.assign({}, r0.marginMonthlyByDept || {});
+      Object.keys(settleByDeptSer).forEach(d => { const o = Object.assign({}, mByDept[d] || {}); months.forEach((m, i) => { o[m] = (o[m] || 0) + settleByDeptSer[d][i]; }); mByDept[d] = o; });
       const amap = deptAllocMap(months);
       const hqAllocSeries = Object.create(null); // hq → [월별 배분 수익]
       const hqAllocCnt = Object.create(null);
       if (REALIZED) { // 실현 수익은 배분 설정과 무관하게 부서별로 존재 → 대상에 추가
-        Object.keys(r0.marginMonthlyByDept || {}).forEach(d => { if (!amap.has(d)) amap.set(d, { dept: d, parts: [] }); });
+        Object.keys(mByDept).forEach(d => { if (!amap.has(d)) amap.set(d, { dept: d, parts: [] }); });
       }
       amap.forEach((ent, dname) => {
         if (!deptAllowed(dname)) return; // 화면 권한 밖 부서의 배분 수익 제외
         const ser = allocSeriesFor(ent.parts, months, dname);
         // 실현 수익 화면: 배분 비율이 없어도 실현 수익이 있는 부서는 모두 포함 (전체 = 회사 실현 수익과 일치)
-        const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser;
+        const use = REALIZED ? months.map(m => (mByDept[dname] || {})[m] || 0) : ser;
         if (REALIZED ? !use.some(v => v !== 0) : !ser.some(v => v > 0)) return;
         const hq = hqm[norm(dname)] || '기타';
         if (!hqAllocSeries[hq]) { hqAllocSeries[hq] = months.map(() => 0); hqAllocCnt[hq] = 0; }
@@ -1775,7 +1825,9 @@ export default function init() {
           id: 'bu-margin' + SUF, realized: REALIZED, deptLevel: DEPT_LEVEL, months, cur, prev,
           allow: buDepts(),
           kpi: { tMargin: dispTMargin, curMargin, prevMargin, tCost, curCost, prevCost, usage, allocTotal },
-          series: { margin: dispMarginSeries, cost: totalCostSeries, supAlloc: REALIZED ? zeros() : supAllocSeriesBU, supCost: REALIZED ? zeros() : supCostSeriesBU },
+          // marginTrade: 구매/판매 실현 수익만 (운영 지표용) · settle: 결산 매출 (실현 수익 화면 수익에 포함된 금액)
+          settle: REALIZED ? { series: settleSeries, byHq: settleByHqSer, byDept: settleByDeptSer, byAcc: Object.fromEntries(Object.keys(SET.byAcc).map(a => [a, months.map(m => SET.byAcc[a][m] || 0)])) } : null,
+          series: { margin: dispMarginSeries, marginTrade: REALIZED ? tradeMarginSeries : dispMarginSeries, cost: totalCostSeries, supAlloc: REALIZED ? zeros() : supAllocSeriesBU, supCost: REALIZED ? zeros() : supCostSeriesBU },
           hqCards: hqShowMargin.map(hq => { const s2 = hqAllocSeries[hq] || zeros(); const sum = s2.reduce((x, y) => x + y, 0); return { hq, series: s2, sum, cur: s2[s2.length - 1] || 0, prev: s2.length > 1 ? s2[s2.length - 2] : 0, share: DEPT_LEVEL ? null : pct(sum, allocTotal) }; }),
           hqGroups: hqShow.map(hq => { const dep = hqDepts[hq] || []; const mSer = hqAllocSeries[hq] || zeros();
             const supC = months.map(m => REALIZED ? 0 : dep.reduce((s3, d) => s3 + supportRecv(d, m), 0)); const supM = months.map(m => REALIZED ? 0 : dep.reduce((s3, d) => s3 + supportGive(d, m), 0));
@@ -1791,7 +1843,7 @@ export default function init() {
             const byGroup = GROUPS.map(g => { const mm = groupMonthlyMargin(g); const ser = months.map(m => mm[m] || 0); return { key: g.key, label: g.label, series: ser, cur: ser[ser.length - 1] || 0, prev: ser.length > 1 ? ser[ser.length - 2] : 0, sum: ser.reduce((a, b) => a + b, 0) }; }).filter(x => x.series.some(v => v !== 0));
             const byBUList = busAll.map(b => { const ser = buSeries[b]; return { bu: b, series: ser, cur: ser[ser.length - 1] || 0, prev: ser.length > 1 ? ser[ser.length - 2] : 0, sum: ser.reduce((a, b2) => a + b2, 0) }; }).filter(x => x.series.some(v => v !== 0));
             const byDeptList = [];
-            amap.forEach((ent, dname) => { if (!deptAllowed(dname)) return; const ser = allocSeriesFor(ent.parts, months, dname); const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[dname] || {})[m] || 0) : ser; if (!use.some(v => REALIZED ? v !== 0 : v > 0)) return; byDeptList.push({ d: dname, hq: hqm[norm(dname)] || '기타', cur: use[use.length - 1] || 0, prev: use.length > 1 ? use[use.length - 2] : 0, sum: use.reduce((a, b) => a + b, 0), groups: ent.parts.map(p => p.g.label), support: REALIZED ? 0 : supportGive(dname, cur) }); });
+            amap.forEach((ent, dname) => { if (!deptAllowed(dname)) return; const ser = allocSeriesFor(ent.parts, months, dname); const use = REALIZED ? months.map(m => (mByDept[dname] || {})[m] || 0) : ser; if (!use.some(v => REALIZED ? v !== 0 : v > 0)) return; byDeptList.push({ d: dname, hq: hqm[norm(dname)] || '기타', cur: use[use.length - 1] || 0, prev: use.length > 1 ? use[use.length - 2] : 0, sum: use.reduce((a, b) => a + b, 0), groups: ent.parts.map(p => p.g.label), support: REALIZED ? 0 : supportGive(dname, cur) }); });
             byDeptList.sort((a, b) => b.cur - a.cur);
             return { byGroup, byBU: byBUList, byDept: byDeptList, supportCur: REALIZED ? 0 : (supAllocSeriesBU[months.length - 1] || 0) };
           })(),
@@ -1803,12 +1855,13 @@ export default function init() {
               if (seen.has(d)) return; seen.add(d);
               const ent = amap.get(d);
               const ser = ent ? allocSeriesFor(ent.parts, months, d) : zeros();
-              const use = REALIZED ? months.map(m => ((r0.marginMonthlyByDept || {})[d] || {})[m] || 0) : ser;
+              const use = REALIZED ? months.map(m => (mByDept[d] || {})[m] || 0) : ser;
               const costSer = months.map(m => ((dm[d] && dm[d][m]) || 0) + (REALIZED ? 0 : supportRecv(d, m)));
               const rec = (hc.byDept[norm(d)] || {})[cur];
               // 운영 지표용: 월별 인원·입퇴사, 전표 비용   (고정비는 설정 › 고정비 설정 기준으로 DB 가 계산)
               const hcd = hc.byDept[norm(d)] || {};
-              rows.push({ d, hq: hqm[norm(d)] || '기타', margin: use, cost: costSer, emp: rec ? rec.emp : 0,
+              const st = settleByDeptSer[d];
+              rows.push({ d, hq: hqm[norm(d)] || '기타', margin: use, marginTrade: st ? use.map((v, i) => v - st[i]) : use, cost: costSer, emp: rec ? rec.emp : 0,
                 empSer: months.map(m => (hcd[m] ? hcd[m].emp : 0)), inSer: months.map(m => (hcd[m] ? hcd[m].in : 0)), outSer: months.map(m => (hcd[m] ? hcd[m].out : 0)),
                 vCost: months.map(m => (dm[d] && dm[d][m]) || 0) });
             };

@@ -15,6 +15,7 @@ export function isCostVoucher(r: VRow): boolean {
   const ct = String(pick(r, '비용구분', 'UMCostTypeName'));
   if (!dept) return false;
   if (acc.includes('집합') || desc.includes('제조원가대체') || desc.includes('손익대체') || desc.includes('원가대체') || dept.includes('원가계산')) return false;
+  if (/^(상품|제품)매출\(결산\)$/.test(acc.replace(/\s+/g, ''))) return false; // 결산 매출 — 비용 아님 (실현 수익 화면 수익에만 사용)
   return acc.includes('(판)') || acc.includes('(제)') || ct.includes('판관') || ct.includes('제조');
 }
 

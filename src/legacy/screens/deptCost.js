@@ -199,6 +199,7 @@ export default function init() {
 
       // 월말 결산/대체 전표 무시
       if (accName.includes('집합') || desc.includes('제조원가대체') || desc.includes('손익대체') || desc.includes('원가대체') || dept.includes('원가계산')) return;
+      if (/^(상품|제품)매출\(결산\)$/.test(String(accName).replace(/\s+/g, ''))) return; // 결산 매출 — 비용 아님
 
       // 비용 타입 판별
       let type = null;

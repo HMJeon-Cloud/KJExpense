@@ -20,7 +20,7 @@ export type OpsDeptRow = {
 };
 export type OpsModel = {
   months: string[]; cur: string; realized: boolean; deptLevel: boolean; allow?: string[] | null;
-  series: { margin: number[] }; deptRows: OpsDeptRow[]; hqOrder?: string[];
+  series: { margin: number[]; marginTrade?: number[] }; deptRows: (OpsDeptRow & { marginTrade?: number[] })[]; hqOrder?: string[];
 };
 
 type InvLot = [string, string, string, string, string, string, number, number, number | null]; // 부서, 사업단위, 품목, LOT, 입고일, 최근판매일, 수량, 금액, 경과일
@@ -165,7 +165,8 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
 
   // ── ① 인당 (실현 수익 · 배분 후 비용 · 배분 후 인원) ──
   const perCap = useMemo(() => {
-    const al = applyHqAlloc(model.deptRows, months, allocCfg);
+    // 운영 지표는 구매/판매 실현 수익 기준 — 결산 매출(실현 수익 화면에만 더함)은 제외
+    const al = applyHqAlloc(model.deptRows.map(r => (r.marginTrade ? { ...r, margin: r.marginTrade } : r)), months, allocCfg);
     const order = (h: string) => { const i = (model.hqOrder || []).indexOf(h); return i < 0 ? 999 : i; };
     const per = (m: number[], c: number[], e: number[]) => ({
       emp: e[ci], pm: e[ci] ? m[ci] / e[ci] : null, pc: e[ci] ? c[ci] / e[ci] : null, pn: e[ci] ? (m[ci] - c[ci]) / e[ci] : null,
@@ -185,7 +186,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
 
   // ── ⑥ 고정비 대비 수익 ──
   const fixed = useMemo(() => {
-    const rev = model.series.margin.slice();   // 회사 전체 실현 수익
+    const rev = (model.series.marginTrade || model.series.margin).slice();   // 회사 전체 실현 수익 (구매/판매, 결산 매출 제외)
     const vc = months.map((_, i) => sum(model.deptRows.map(r => (r.vCost || [])[i] || 0)));
     const inRows = new Set(model.deptRows.map(r => r.d));
     const mi: Record<string, number> = {}; months.forEach((m, i) => { mi[m] = i; });
@@ -194,7 +195,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
     (fxd?.rows || []).forEach(([d, ym, a, v]) => { const i = mi[ym]; if (i == null || !inRows.has(d)) return; fx[i] += +v; if (i === ci) accs[a] = (accs[a] || 0) + +v; });
     const accList = Object.entries(accs).filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
     return { rev, fx, vc, accList, cover: months.map((_, i) => (fx[i] > 0 ? Math.round(rev[i] / fx[i] * 1000) / 10 : null)) };
-  }, [model.deptRows, model.series.margin, months, ci, fxd]);
+  }, [model.deptRows, model.series.margin, model.series.marginTrade, months, ci, fxd]);
 
   // ── DB 묶음 (②③④⑤⑦) ──
   const db = useMemo(() => {

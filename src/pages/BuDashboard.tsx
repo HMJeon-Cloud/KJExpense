@@ -24,6 +24,7 @@ type Model = {
   alerts: { ups: { d: string; a: string; v: number; hq: string }[]; downs: { d: string; a: string; v: number; hq: string }[] };
   headcount: { hq: string; emp: number; cost: number; per: number | null; depts: string[] }[];
   hqOrder: string[];
+  settle?: { series: number[]; byHq: Record<string, number[]>; byDept: Record<string, number[]>; byAcc: Record<string, number[]> } | null;
   deptRows: OpsDeptRow[]; allow?: string[] | null; fixedRule?: string;
   revenue: { byGroup: { key: string; label: string; series: number[]; cur: number; prev: number; sum: number }[]; byBU: { bu: string; series: number[]; cur: number; prev: number; sum: number }[]; byDept: { d: string; hq: string; cur: number; prev: number; sum: number; groups: string[]; support: number }[]; supportCur: number };
 };
@@ -163,7 +164,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
       `}</style>
 
       <div className="ttl">
-        <div><h1>{title}</h1>{d && <div className="sub">{d.period} 기준. 수익은 {model!.realized ? '판매 실현 수익' : '구매/판매 이윤을 부서 배분 비율로 나눈 값'}, 비용은 전표 합계입니다.</div>}</div>
+        <div><h1>{title}</h1>{d && <div className="sub">{d.period} 기준. 수익은 {model!.realized ? '판매 실현 수익 + 결산 매출(상품·제품매출(결산))' : '구매/판매 이윤을 부서 배분 비율로 나눈 값'}, 비용은 전표 합계입니다.</div>}</div>
         <span className="sp" />
         <span className="monthnav" title="기준월">
           <button onClick={() => setBase(shiftMonth(ctl.baseMonth, -1))} disabled={!hasPrev} aria-label="이전 달">‹</button>
@@ -266,7 +267,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 4. 수익 구성 */}
           <section className="sec">
             <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 수익은 어디서 났나<HelpDot id={hid('revenue')} /></h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
-            <p className="lead">{model.realized ? '사업장별 실현 수익과 부서별 수익입니다.' : '왼쪽은 구매/판매 이윤이 어느 팀 기준으로 발생했는지, 오른쪽은 배분 비율을 거쳐 부서에 돌아간 수익입니다.'}{model.revenue?.supportCur ? ` 지원 내역으로 받은 수익 ${kor(model.revenue.supportCur)}이 부서 수익에 포함돼 있습니다.` : ''}</p>
+            <p className="lead">{model.realized ? '사업장별 실현 수익과 부서별 수익입니다.' + (model.settle && model.settle.series[model.months.length - 1] ? ` 결산 매출 ${kor(model.settle.series[model.months.length - 1])}이 포함돼 있습니다.` : '') : '왼쪽은 구매/판매 이윤이 어느 팀 기준으로 발생했는지, 오른쪽은 배분 비율을 거쳐 부서에 돌아간 수익입니다.'}{model.revenue?.supportCur ? ` 지원 내역으로 받은 수익 ${kor(model.revenue.supportCur)}이 부서 수익에 포함돼 있습니다.` : ''}</p>
             {showRev && model.revenue && (
               <div className="costgrid">
                 <div>
@@ -293,6 +294,22 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     </div>
                   )}
                   {model.realized && !model.revenue.byBU.length && <span className="help">표시할 데이터가 없습니다.</span>}
+                  {model.realized && model.settle && model.settle.series.some(v => v !== 0) && (() => {
+                    const st = model.settle!; const ci = model.months.length - 1;
+                    const hqs = Object.keys(st.byHq).filter(h => st.byHq[h].some(v => v !== 0));
+                    return (
+                      <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                        <div className="help" style={{ marginBottom: 6 }}>위 사업장 수익에 포함된 결산 매출 (전표 상품매출(결산)·제품매출(결산) — 분기 마감 수정분개·IFRS 반품충당부채)</div>
+                        <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장 · 계정</span><span>{ymL(model.cur)} · {model.months.length}개월 합계</span></div>
+                        {hqs.map(h => (
+                          <div key={h} className="row" style={{ justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{h}</span><span className="row" style={{ gap: 10 }}><span className="num" style={{ color: st.byHq[h][ci] < 0 ? 'var(--neg)' : undefined }}>{fmt(st.byHq[h][ci])}</span><span className="num help">{fmt(st.byHq[h].reduce((a, b) => a + b, 0))}</span></span></div>
+                        ))}
+                        {Object.keys(st.byAcc).map(a => (
+                          <div key={a} className="row help" style={{ justifyContent: 'space-between', fontSize: 12, padding: '2px 0 2px 12px' }}><span>{a}</span><span className="row" style={{ gap: 10 }}><span className="num">{fmt(st.byAcc[a][ci])}</span><span className="num">{fmt(st.byAcc[a].reduce((x, y) => x + y, 0))}</span></span></div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div>
                   {model.revenue.byDept.length > 0 && <ListHead cls="toprow" cols={['', '부서', '', '>' + (model.realized ? '실현 수익' : '배분 수익'), '>전월비']} />}

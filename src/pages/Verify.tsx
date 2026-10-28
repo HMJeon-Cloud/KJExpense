@@ -25,6 +25,7 @@ function aggregateRows(rows: Record<string, unknown>[]): { dm: DM; dma: Record<s
     const ct = String(pickV(row, '비용구분', 'UMCostTypeName'));
     if (!dept) continue;
     if (acc.includes('집합') || desc.includes('제조원가대체') || desc.includes('손익대체') || desc.includes('원가대체') || dept.includes('원가계산')) continue;
+    if (/^(상품|제품)매출\(결산\)$/.test(acc.replace(/\s+/g, ''))) continue; // 결산 매출 — 비용 아님
     if (!(acc.includes('(판)') || acc.includes('(제)') || ct.includes('판관') || ct.includes('제조'))) continue;
     const m = String(pickV(row, '회계일', 'AccDate')).replace(/[^0-9]/g, '').slice(0, 6);
     if (m.length !== 6) continue;
