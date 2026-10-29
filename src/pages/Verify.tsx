@@ -41,11 +41,11 @@ function dmFromAgg(agg: AggRow[]): { dm: DM; dma: Record<string, Record<string, 
   return { dm, dma };
 }
 type Diff = { dept: string; ym: string; acc: string; a: number; b: number };
-type JsLot = { __key?: string; bizUnit: string; dept: string; buyer: string; vendor: string; blNo: string; lotNo: string; impKind: string; totalPQty: number; totalPAmt: number; totalAllocExp: number; unitCost: number; totalSQty: number; totalSAmt: number; totalDisposalQty: number; totalMatQty?: number; totalOutQty?: number; totalInQty?: number; cogs: number; margin: number; inventoryQty: number; inventory: number; pDateRaw: string; sDateRaw: string };
-type SqlLot = { lot_key: string; biz_unit: string; dept: string; buyer: string; vendor: string; bl_no: string; lot_no: string; imp_kind: string; p_qty: number; p_amt: number; alloc_exp: number; unit_cost: number; s_qty: number; s_amt: number; disposal_qty: number; mat_qty: number; out_qty?: number; in_qty?: number; cogs: number; margin: number; inv_qty: number; inv_amt: number; p_date: string; s_date: string };
+type JsLot = { __key?: string; bizUnit: string; dept: string; buyer: string; vendor: string; blNo: string; lotNo: string; impKind: string; totalPQty: number; totalPAmt: number; totalAllocExp: number; unitCost: number; totalSQty: number; totalSAmt: number; totalDisposalQty: number; totalMatQty?: number; totalOutQty?: number; totalInQty?: number; totalRetQty?: number; cogs: number; margin: number; inventoryQty: number; inventory: number; pDateRaw: string; sDateRaw: string };
+type SqlLot = { lot_key: string; biz_unit: string; dept: string; buyer: string; vendor: string; bl_no: string; lot_no: string; imp_kind: string; p_qty: number; p_amt: number; alloc_exp: number; unit_cost: number; s_qty: number; s_amt: number; disposal_qty: number; mat_qty: number; out_qty?: number; in_qty?: number; ret_qty?: number; cogs: number; margin: number; inv_qty: number; inv_amt: number; p_date: string; s_date: string };
 type LotDiff = { key: string; field: string; a: string | number; b: string | number };
 const LOT_FIELDS: [string, keyof JsLot, keyof SqlLot, boolean][] = [['사업단위', 'bizUnit', 'biz_unit', false], ['부서', 'dept', 'dept', false], ['담당자', 'buyer', 'buyer', false], ['수입처', 'vendor', 'vendor', false], ['BL', 'blNo', 'bl_no', false], ['수입구분', 'impKind', 'imp_kind', false], ['입고일', 'pDateRaw', 'p_date', false], ['발행일', 'sDateRaw', 's_date', false],
-  ['구매수량', 'totalPQty', 'p_qty', true], ['구매금액', 'totalPAmt', 'p_amt', true], ['부대비용', 'totalAllocExp', 'alloc_exp', true], ['단가', 'unitCost', 'unit_cost', true], ['판매수량', 'totalSQty', 's_qty', true], ['매출', 'totalSAmt', 's_amt', true], ['폐기수량', 'totalDisposalQty', 'disposal_qty', true], ['생산투입수량', 'totalMatQty', 'mat_qty', true], ['기타출고수량', 'totalOutQty', 'out_qty', true], ['기타입고수량', 'totalInQty', 'in_qty', true], ['원가', 'cogs', 'cogs', true], ['실현수익', 'margin', 'margin', true], ['재고수량', 'inventoryQty', 'inv_qty', true], ['재고금액', 'inventory', 'inv_amt', true]];
+  ['구매수량', 'totalPQty', 'p_qty', true], ['구매금액', 'totalPAmt', 'p_amt', true], ['부대비용', 'totalAllocExp', 'alloc_exp', true], ['단가', 'unitCost', 'unit_cost', true], ['판매수량', 'totalSQty', 's_qty', true], ['매출', 'totalSAmt', 's_amt', true], ['폐기수량', 'totalDisposalQty', 'disposal_qty', true], ['생산투입수량', 'totalMatQty', 'mat_qty', true], ['기타출고수량', 'totalOutQty', 'out_qty', true], ['기타입고수량', 'totalInQty', 'in_qty', true], ['반품수량', 'totalRetQty', 'ret_qty', true], ['원가', 'cogs', 'cogs', true], ['실현수익', 'margin', 'margin', true], ['재고수량', 'inventoryQty', 'inv_qty', true], ['재고금액', 'inventory', 'inv_amt', true]];
 function compareLots(js: JsLot[], sql: SqlLot[]) {
   const S = new Map(sql.map(r => [r.lot_key, r])); const seen = new Set<string>(); const diffs: LotDiff[] = []; let missing = 0, bad = 0;
   for (const l of js) {
@@ -263,7 +263,7 @@ function LotTrace() {
   const sec: [string, string, string][] = [
     ['calc', '계산 결과 (LOT + 품번 별)', '구매 − 판매 − 폐기 − 생산 투입 = 재고 수량. 품번이 다르면 다른 줄입니다.'],
     ['stock', 'ERP 재고 (LOT별 재고 업로드)', '여기에 없는 품번은 ERP 상 재고가 없는 것입니다.'],
-    ['purchase', '구매 행', '품번(Chk) 이 LOT 묶음 기준, 품번은 보조로 씁니다. 수입구분 "폐기" 행은 폐기 수량, 수입구분 "기타출고" 행은 같은 LOT·품번(Chk)에서 빼는 출고 수량, "기타입고" 행은 더하는 입고 수량입니다.'],
+    ['purchase', '구매 행', '품번(Chk) 이 LOT 묶음 기준, 품번은 보조로 씁니다. 수입구분 "폐기" 행은 폐기 수량, 수입구분 "기타출고" 행은 같은 LOT·품번(Chk)에서 빼는 출고 수량, "기타입고" 행은 더하는 입고 수량, "반품" 행은 구매에 더하는 음수 수량·금액입니다.'],
     ['sale', '판매 행', '판매 품번이 구매 품번(Chk)과 같아야 그 LOT 판매로 잡힙니다.'],
     ['matUsed', '실자재투입 — 이 LOT 이 자재로 쓰인 행', '자재 품번 + 자재 LOT 이 구매와 같아야 재고에서 빠집니다.'],
     ['matMade', '실자재투입 — 이 LOT 으로 생산된 행', '참고: 이 LOT 번호로 만든 제품'],

@@ -129,7 +129,7 @@ p2 as materialized (
 ),
 fx as (
   select dept, ym, cur, sum(f) as f, sum(f * rate) as won from p2
-  where kind not in ('폐기', '기타출고', '기타입고') and imp_type not in ('기타출고', '기타입고') and asset not in ('36', '37') and cur not in ('', 'KRW', 'WON', '원') and rate > 1 and f > 0
+  where kind not in ('폐기', '기타출고', '기타입고', '반품') and imp_type not in ('기타출고', '기타입고', '반품') and asset not in ('36', '37') and cur not in ('', 'KRW', 'WON', '원') and rate > 1 and f > 0
     and ym between p_from and p_to
   group by 1, 2, 3
 )

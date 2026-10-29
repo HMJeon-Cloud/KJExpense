@@ -980,6 +980,7 @@ export default function init() {
         const disposalMap = Object.create(null);
         const pDataMap = Object.create(null);
         let noLotIdx = 0;
+        const returnRaw = [];   // ★ 반품 (수입구분 또는 SMImpTypeName = '반품'): 수량·금액이 음수 — 같은 구매 LOT 에 그대로 더함
         const otherInRaw = [];  // ★ 기타입고 (수입구분 또는 SMImpTypeName = '기타입고'): 같은 LOT 에 수량만 더함
         const otherOutRaw = []; // ★ 기타출고 (SMImpTypeName = '기타출고'): 구매가 아니라 재고에서 나간 수량
         pDataRaw.forEach(p => {
@@ -987,6 +988,11 @@ export default function init() {
           const lot = cleanString(getVal(p, 'LOTNO')).toUpperCase();
           const itemNo = cleanString(getVal(p, 'ITEMNOCHK', 'ITEMNO', '품번')).toUpperCase();
           const __impType = cleanString(getVal(p, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'));
+          if ([impKind, __impType].some(v => v.replace(/\s+/g, '') === '반품')) {
+            const itemAlt = cleanString(getVal(p, 'ITEMNO', 'ITEMNOCHK', '품번')).toUpperCase();
+            if (lot) returnRaw.push({ row: p, keys: [lot + "_" + itemNo, lot + "_" + itemAlt].filter((v, i, a) => v && a.indexOf(v) === i), qty: parseNum(getVal(p, 'QTY', '수량')), amt: Math.round(parseNum(getVal(p, 'DOMAMT', '원화금액'))) });
+            return;
+          }
           if ([impKind, __impType].some(v => v.replace(/\s+/g, '') === '기타입고')) {
             const itemAlt = cleanString(getVal(p, 'ITEMNO', 'ITEMNOCHK', '품번')).toUpperCase();
             if (lot) otherInRaw.push({ row: p, keys: [lot + "_" + itemNo, lot + "_" + itemAlt].filter((v, i, a) => v && a.indexOf(v) === i), qty: Math.abs(parseNum(getVal(p, 'QTY', '수량'))) });
@@ -1082,6 +1088,14 @@ export default function init() {
         // ★ 기타입고: ItemNoChk + LOTNo 가 같은 LOT 에 수량을 더함 (구매 LOT → 보조 품번 → 판매만 있는 LOT 순)
         //   맞는 LOT 이 없으면 반영하지 않음 · 금액·부서는 쓰지 않음 (구매 단가는 구매 행 기준 그대로)
         const otherInMap = Object.create(null); // LOT 키 → { qty, rows }
+        // ★ 반품: ItemNoChk + LOTNo 가 같은 구매 LOT 에 수량·금액(음수)을 더함 (없으면 보조 품번) — 맞는 구매 LOT 이 없으면 반영 안 함
+        const returnMap = Object.create(null); // LOT 키 → { qty, amt, rows }
+        returnRaw.forEach(o => {
+          const k = lotKeyOf(o.keys);
+          if (!k) return;
+          const e = returnMap[k] || (returnMap[k] = { qty: 0, amt: 0, rows: [] });
+          e.qty += o.qty; e.amt += o.amt; e.rows.push(o.row);
+        });
         otherInRaw.forEach(o => {
           const k = lotKeyOf(o.keys) || o.keys.find(c => sDataMap[c]) || null;
           if (!k) return;
@@ -1114,7 +1128,7 @@ export default function init() {
             if (!pr.length) continue;
             const pQty = pr.reduce((a, r) => a + parseNum(getVal(r, 'QTY', '수량')), 0);
             const sQty = (sDataMap[k] || []).reduce((a, r) => a + parseNum(getVal(r, 'QTY', '수량')), 0);
-            const left = pQty + ((otherInMap[k] && otherInMap[k].qty) || 0) - sQty - (matUseMap[k] || 0) - ((otherOutMap[k] && otherOutMap[k].qty) || 0);   // 생산 투입·기타출고분은 이미 빠진 잔량
+            const left = pQty + ((otherInMap[k] && otherInMap[k].qty) || 0) + ((returnMap[k] && returnMap[k].qty) || 0) - sQty - (matUseMap[k] || 0) - ((otherOutMap[k] && otherOutMap[k].qty) || 0);   // 생산 투입·기타출고분은 이미 빠진 잔량
             if (left <= 0) continue;
             if (Math.abs(left - dQty) > Math.max(1e-6, dQty * 1e-6)) continue;
             disposalInfo[k] = { qty: dQty, matched: true, all: sQty <= 1e-9 }; // 판매가 전혀 없으면 전량 폐기
@@ -1223,8 +1237,12 @@ export default function init() {
             const pDate = cleanString(getVal(p, 'PERMITDATE', '수입면장일자', '구매일자'));
             if (pDate > pDateRaw) pDateRaw = pDate;
           });
+          const totalRetQty = (returnMap[lotKey] && returnMap[lotKey].qty) || 0;    // 반품 수량 (음수)
+          const totalRetAmt = (returnMap[lotKey] && returnMap[lotKey].amt) || 0;    // 반품 금액 (음수)
+          const retRows = (returnMap[lotKey] && returnMap[lotKey].rows) || [];
+          totalPQty += totalRetQty; totalPAmt += totalRetAmt;     // 구매 수량·금액에 반품을 더함
           const totalCost = totalPAmt + totalAllocExp;
-          const totalBuyQty = totalPQty;                          // 구매 행 수량 (단가 기준)
+          const totalBuyQty = totalPQty;                          // 구매 + 반품 수량 (단가 기준)
           const unitCost = totalBuyQty > 0 ? totalCost / totalBuyQty : 0;
           const totalInQty = (otherInMap[lotKey] && otherInMap[lotKey].qty) || 0;   // 기타입고 수량
           const inRows = (otherInMap[lotKey] && otherInMap[lotKey].rows) || [];
@@ -1296,6 +1314,9 @@ export default function init() {
             outRows,
             totalInQty,
             inRows,
+            totalRetQty,
+            totalRetAmt,
+            retRows,
             totalBuyQty,
             sales: totalSAmt,
             cogs,
@@ -1417,7 +1438,7 @@ export default function init() {
               const pv0 = computeProfits({
                 noSales: true, itemNo: kw.itemNo || '', lotNo: lo.lotNo || '', ym: lym,
                 isSynth: isSyn, lotDept: dp, sellBuy: sellBuy, sellSyn: sellSyn, proc: procU,
-                unitWon: unitWon, saleQty: (lo.totalPQty || 0) - (lo.totalInQty || 0), saleAmt: 0   // 기타입고 수량 제외
+                unitWon: unitWon, saleQty: (lo.totalPQty || 0) - (lo.totalInQty || 0) - (lo.totalRetQty || 0), saleAmt: 0   // 기타입고·반품 수량 제외 (구매 행 수량)
               });
               if (lym.length === 6) PROFIT_COLS.forEach(pc => {
                 const x = pv0[pc.key];
@@ -1560,7 +1581,8 @@ export default function init() {
         const d = cleanString(getVal(p, 'PERMITDATE', '수입면장일자', '구매일자'));
         if (d > pDateRaw) pDateRaw = d;
       });
-      const unitCost = pQty > 0 ? (pAmt + allocExp) / pQty : 0;   // 구매 행 기준 (기타입고 제외)
+      pQty += lot.totalRetQty || 0; pAmt += lot.totalRetAmt || 0;   // 반품(음수) 반영
+      const unitCost = pQty > 0 ? (pAmt + allocExp) / pQty : 0;   // 구매 + 반품 기준 (기타입고 제외)
       const buyQty = pQty;
       pQty += lot.totalInQty || 0;                                  // 총 입고 수량 = 구매 + 기타입고
       const ym = String(pDateRaw || lot.pDateRaw || '').replace(/[^0-9]/g, '').slice(0, 6);
@@ -2385,6 +2407,13 @@ export default function init() {
             po.left -= q; so.left -= q;
           }
         });
+        // ★ 반품 분: 판매 다음 순서로 구매 건에서 차감해 "반품" 행으로 표시 (부서별 이윤·실현 수익 없음)
+        (lotObj.retRows || []).forEach(o => {
+          let left = Math.abs(parseNum(getVal(o, 'QTY', '수량')));
+          const __rq = left;
+          ps.forEach(po => { if (left <= 1e-9 || po.left <= 1e-9 || (lotObj.inRows || []).indexOf(po.p) >= 0) return; const q = Math.min(po.left, left); out.push({ p: po.p, s: null, qty: q, tot: 0, retUsed: true, oRow: o, rq: __rq }); po.left -= q; left -= q; });
+          if (left > 1e-9) out.push({ p: null, s: null, qty: left, tot: 0, retUsed: true, oRow: o, rq: __rq });
+        });
         // 생산 투입(실자재투입) 분: 판매 다음 순서로 입고 건에서 차감해 "생산 투입" 행으로 표시
         let __mLeft = lotObj.totalMatQty || 0;
         ps.forEach(po => { if (__mLeft <= 1e-9 || po.left <= 1e-9) return; const q = Math.min(po.left, __mLeft); out.push({ p: po.p, s: null, qty: q, tot: 0, matUsed: true }); po.left -= q; __mLeft -= q; });
@@ -2419,7 +2448,7 @@ export default function init() {
         const __inRowSet = new Set(lotObj.inRows || []);
         const __segIsIn = !!(seg && seg.p && __inRowSet.has(seg.p));   // 기타입고 건에 배정된 행 → 부서별 이윤 없음
         // 자산순번 36·37 LOT 의 이윤(LOT 전체 1회)을 표시할 행: 기타출고가 아닌 첫 행 (없으면 첫 행)
-        const __pvRow = (() => { const ix = __segs.findIndex(x => !x.outUsed && (lotObj.inRows || []).indexOf(x.p) < 0); return ix < 0 ? 0 : ix; })();
+        const __pvRow = (() => { const ix = __segs.findIndex(x => !x.outUsed && !x.retUsed && (lotObj.inRows || []).indexOf(x.p) < 0); return ix < 0 ? 0 : ix; })();
         const isLast = i === __segCount - 1;
         const rowSpan = __segCount;
         // 실현 수익(구매)/(합성) — LOT 값 산출 후 판매내역 행별로 판매수량 비례 안분 표시
@@ -2488,6 +2517,7 @@ export default function init() {
           rowSpan: rowSpan,
           className: "py-1 px-1.5 text-right border-l border-b border-slate-200 align-middle font-medium text-slate-700"
         }, formatFloat(totalPQty), " ", pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') : ((lotObj.inRows && lotObj.inRows[0]) ? getVal(lotObj.inRows[0], 'UNITNAME', '단위') : 'KG'),
+          (lotObj.totalRetQty || 0) !== 0 && /*#__PURE__*/React.createElement("div", { className: "text-[10px] text-rose-700 font-normal", title: "반품 수량 " + formatFloat(lotObj.totalRetQty) + " · 금액 " + formatNumber(lotObj.totalRetAmt || 0) + "원 (구매 수량·금액에 더함)" }, "반품 " + formatFloat(lotObj.totalRetQty) + " 포함"),
           (lotObj.totalInQty || 0) > 0 && /*#__PURE__*/React.createElement("div", { className: "text-[10px] text-teal-700 font-normal", title: "구매 " + formatFloat(lotObj.totalBuyQty || 0) + " + 기타입고 " + formatFloat(lotObj.totalInQty) }, "기타입고 " + formatFloat(lotObj.totalInQty) + " 포함"))),
         // ★ 입고(구매) 행별 상세 — 같은 LOT에 입고 건이 여러 개면 각 행으로 표시
         (() => {
@@ -2558,7 +2588,11 @@ export default function init() {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-indigo-600 bg-indigo-50/30 border-l border-slate-100 " + bottomBorder + " font-medium",
           title: "실자재투입 내역에서 이 LOT(같은 품번)이 생산에 투입된 수량 — 재고에서 뺌. 원료 수익은 생산된 제품 LOT 에서 원료 부서로 계산합니다 (여기서 또 계산하면 중복)."
-        }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.outUsed) ? /*#__PURE__*/React.createElement("td", {
+        }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.retUsed) ? /*#__PURE__*/React.createElement("td", {
+          colSpan: 9,
+          className: "py-1 px-1.5 text-center text-rose-700 bg-rose-50/40 border-l border-slate-100 " + bottomBorder + " font-medium",
+          title: "구매 데이터의 수입구분(또는 SMImpTypeName) '반품' 행 (같은 LOTNo + ItemNoChk) — 수량·금액(음수)을 구매에 더함 · 부서별 이윤 없음"
+        }, "반품 -" + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '') + (seg.oRow ? " · " + formatNumber(Math.round(parseNum(getVal(seg.oRow, 'DOMAMT', '원화금액')) * (seg.rq > 0 ? segQty / seg.rq : 1))) + "원" + (cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) ? " (" + cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) + ")" : "") : "")) : (seg && seg.outUsed) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-amber-700 bg-amber-50/40 border-l border-slate-100 " + bottomBorder + " font-medium",
           title: "구매 데이터의 SMImpTypeName '기타출고' 행 (같은 LOTNo + ItemNoChk) — 재고에서 뺌 · 구매 부서 이윤만 계산, 실현 수익 없음"
@@ -2588,8 +2622,8 @@ export default function init() {
           const __pv = (__noSaleLot && i === __pvRow) ? computeProfits({
             noSales: true, tradeAsset: isTradeAsset(__pSeg), itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '',
             ym: __ymSeg, isSynth: __isSynLot, lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg,
-            proc: __procSeg != null ? __procSeg : __procW, unitWon: __unitWonSeg, saleQty: totalPQty - (lotObj.totalInQty || 0), saleAmt: 0
-          }) : __segIsIn ? null : (seg && seg.outUsed) ? ((__isSynLot || __noSaleLot) ? null : computeProfits({
+            proc: __procSeg != null ? __procSeg : __procW, unitWon: __unitWonSeg, saleQty: totalPQty - (lotObj.totalInQty || 0) - (lotObj.totalRetQty || 0), saleAmt: 0
+          }) : (__segIsIn || (seg && seg.retUsed)) ? null : (seg && seg.outUsed) ? ((__isSynLot || __noSaleLot) ? null : computeProfits({
             noSales: true, tradeAsset: true, isSynth: false,
             itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '', ym: __ymSeg,
             lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg, proc: __procW,

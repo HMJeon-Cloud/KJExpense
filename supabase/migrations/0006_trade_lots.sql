@@ -41,7 +41,7 @@ drop function if exists public.trade_lot_summary_raw() cascade;
 create or replace function public.trade_lot_summary_raw()
 returns table (
   lot_key text, biz_unit text, dept text, buyer text, item_no text, item_name text, vendor text, bl_no text, lot_no text, imp_kind text, asset_seq text,
-  p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric, mat_qty numeric, out_qty numeric, in_qty numeric,
+  p_qty numeric, p_amt numeric, alloc_exp numeric, unit_cost numeric, s_qty numeric, s_amt numeric, disposal_qty numeric, mat_qty numeric, out_qty numeric, in_qty numeric, ret_qty numeric, ret_amt numeric,
   margin_unit numeric, cogs numeric, margin numeric, inv_qty numeric, inv_amt numeric, p_date text, s_date text,
   monthly jsonb,   -- 판매 발행월별 수익 {YYYYMM: Σ(_margin)}
   unit_won float8,  -- 첫 구매행의 단가(원) = PRICE × EXRATE (JS 와 같은 배정밀도)   ※ 이윤 9종용
@@ -61,7 +61,9 @@ p1 as materialized (
     case when '기타출고' in (replace(coalesce(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND'), ''), ' ', ''), replace(coalesce(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'), ''), ' ', ''))
          then '기타출고'
          when '기타입고' in (replace(coalesce(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND'), ''), ' ', ''), replace(coalesce(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'), ''), ' ', ''))
-         then '기타입고' else '' end as imp_type,   -- '기타입고' = 같은 LOT 에 수량만 더함   -- '기타출고' (수입구분 또는 SMImpTypeName) = 재고에서 나간 수량 (구매 아님)
+         then '기타입고'
+         when '반품' in (replace(coalesce(public.kj_v(d, 'SMIMPKINDNAME', '수입구분', 'SMIMPKIND'), ''), ' ', ''), replace(coalesce(public.kj_v(d, 'SMIMPTYPENAME', 'SMIMPTYPE', '입출고구분'), ''), ' ', ''))
+         then '반품' else '' end as imp_type,   -- '기타입고' = 같은 LOT 에 수량만 더함   -- '기타출고' (수입구분 또는 SMImpTypeName) = 재고에서 나간 수량 (구매 아님)
     public.kj_clean(public.kj_v(d, 'LOTNO')) as lot_c,
     upper(public.kj_clean(public.kj_v(d, 'LOTNO'))) as lot_u,
     public.kj_clean(public.kj_v(d, 'ITEMNOCHK', 'ITEMNO', '품번')) as item_c,
@@ -97,6 +99,17 @@ disposal as (  -- 폐기 수량: 폐기 행마다 LOT 키 하나에 배정, Σ|q
   left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
   left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
   where d.imp_type = '' and d.imp_kind = '폐기' and d.lot_u <> ''
+  group by 1
+),
+-- ★ 반품: ItemNoChk + LOTNo 가 같은 구매 LOT 에 수량·금액(음수)을 그대로 더함 (없으면 보조 품번, 그래도 없으면 반영 안 함)   ※ returnMap
+ret as (
+  select coalesce(k1.key, k2.key, a1.key, a2.key) as key, sum(d.qty) as rqty, sum(public.kj_round(d.amt)) as ramt
+  from p1 d
+  left join pkeys k1 on k1.key = d.lot_u || '_' || d.item_u
+  left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
+  left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
+  left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
+  where d.imp_type = '반품' and d.lot_u <> '' and coalesce(k1.key, k2.key, a1.key, a2.key) is not null
   group by 1
 ),
 -- ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번)   ※ otherOutMap
@@ -215,16 +228,19 @@ head as materialized (
 ),
 ptot as (select key, sum(qty) as p_qty, sum(amt_r) as p_amt, sum(alloc_exp) as alloc_exp, max(pdate) as p_date from pr group by key),
 h2 as (
-  select h.*, coalesce(pt.p_qty, 0) + coalesce(oi.iqty, 0) as p_qty,   -- 총 입고 수량 = 구매 + 기타입고
-    coalesce(pt.p_amt, 0) as p_amt, coalesce(pt.alloc_exp, 0) as alloc_exp, coalesce(pt.p_date, '') as p_date,
-    case when coalesce(pt.p_qty, 0) > 0 then (coalesce(pt.p_amt, 0) + coalesce(pt.alloc_exp, 0)) / pt.p_qty else 0 end as unit_cost,
+  select h.*, coalesce(pt.p_qty, 0) + coalesce(rt.rqty, 0) + coalesce(oi.iqty, 0) as p_qty,   -- 총 입고 수량 = 구매 + 반품(음수) + 기타입고
+    coalesce(pt.p_amt, 0) + coalesce(rt.ramt, 0) as p_amt,   -- 구매 금액 + 반품 금액(음수)
+    coalesce(pt.alloc_exp, 0) as alloc_exp, coalesce(pt.p_date, '') as p_date,
+    case when coalesce(pt.p_qty, 0) + coalesce(rt.rqty, 0) > 0 then (coalesce(pt.p_amt, 0) + coalesce(rt.ramt, 0) + coalesce(pt.alloc_exp, 0)) / (coalesce(pt.p_qty, 0) + coalesce(rt.rqty, 0)) else 0 end as unit_cost,   -- (구매+반품 금액 + 부대비용) ÷ (구매+반품 수량)
     coalesce(dd.dqty, 0) as disposal_qty,  -- LOT + 품번 으로 맞춘 폐기 수량
     coalesce(mu.mqty, 0) as mat_qty,       -- 생산에 투입된 수량 (실자재투입)
     coalesce(oo.oqty, 0) as out_qty,       -- 기타출고 수량
-    coalesce(oi.iqty, 0) as in_qty,        -- 기타입고 수량 (구매수량에 더함, 단가 계산에는 쓰지 않음)
+    coalesce(oi.iqty, 0) as in_qty,
+    coalesce(rt.rqty, 0) as ret_qty,       -- 반품 수량 (음수)
+    coalesce(rt.ramt, 0) as ret_amt,       -- 반품 금액 (음수)        -- 기타입고 수량 (구매수량에 더함, 단가 계산에는 쓰지 않음)
     coalesce(oo.outs, '[]'::jsonb) as outs,
     substr(regexp_replace(coalesce(pt.p_date, ''), '[^0-9]', '', 'g'), 1, 6) as lot_ym
-  from head h left join ptot pt on pt.key = h.key left join disposal dd on dd.key = h.key left join matuse mu on mu.key = h.key left join otherout oo on oo.key = h.key left join otherin oi on oi.key = h.key
+  from head h left join ptot pt on pt.key = h.key left join disposal dd on dd.key = h.key left join matuse mu on mu.key = h.key left join otherout oo on oo.key = h.key left join otherin oi on oi.key = h.key left join ret rt on rt.key = h.key
 ),
 -- 월별품목별제조원가 색인 (같은 품목·월이 여럿이면 마지막 행)   ※ profit.js mfgIdx
 mfg as materialized (
@@ -275,7 +291,7 @@ stot as (
   left join (select key, jsonb_object_agg(bym, v) as monthly from smon group by key) b on b.key = a.key
 )
 select h3.key, h3.biz_unit, h3.dept, h3.buyer, h3.item_no, h3.item_name, h3.vendor, h3.bl_no, h3.lot_no, h3.imp_kind, h3.asset_seq,
-  h3.p_qty, h3.p_amt, h3.alloc_exp, h3.unit_cost, coalesce(st.s_qty, 0), coalesce(st.s_amt, 0), h3.disposal_qty, h3.mat_qty, h3.out_qty, h3.in_qty,
+  h3.p_qty, h3.p_amt, h3.alloc_exp, h3.unit_cost, coalesce(st.s_qty, 0), coalesce(st.s_amt, 0), h3.disposal_qty, h3.mat_qty, h3.out_qty, h3.in_qty, h3.ret_qty, h3.ret_amt,
   h3.margin_unit,
   coalesce(st.s_qty, 0) * h3.margin_unit as cogs,
   coalesce(st.s_amt, 0) - coalesce(st.s_qty, 0) * h3.margin_unit as margin,

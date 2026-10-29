@@ -91,7 +91,7 @@ mat_profit as materialized (
 ),
 rows_out as (
   -- (A) AssetSeq 36·37: 판매 없음 → 구매 부서 이윤만, 입고월에 1회   ※ pv0
-  select l3.lot_key_buy as k, l3.lym as ym, public.kj_jsround((l3.sell_buy::float8 - l3.unit_won) * (l3.p_qty - l3.in_qty)::float8) as v   -- 기타입고 수량 제외
+  select l3.lot_key_buy as k, l3.lym as ym, public.kj_jsround((l3.sell_buy::float8 - l3.unit_won) * (l3.p_qty - l3.in_qty - l3.ret_qty)::float8) as v   -- 기타입고·반품 수량 제외 (구매 행 수량)
   from l3 where l3.no_sale and not l3.is_syn and l3.lot_key_buy is not null and l3.sell_buy <> 0 and length(l3.lym) = 6   -- ※ pv0 는 tradeAsset 을 넘기지 않음 → 합성 여부만 봄
   union all
   select mp.dept_key, l3.lym, mp.v

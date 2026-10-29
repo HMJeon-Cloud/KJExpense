@@ -2082,7 +2082,7 @@ export default function init() {
         if (!c) continue;
         // ★ 수입구분이 '폐기'인 행은 제외 (판매가·수량 집계 모두)
         if (String(val(p, P.impkind)).trim() === '폐기') continue;
-        if (['기타출고', '기타입고'].some(t => String(val(p, P.imptype)).replace(/\s+/g, '') === t || String(val(p, P.impkind)).replace(/\s+/g, '') === t)) continue; // ★ 기타출고·기타입고는 구매가 아님
+        if (['기타출고', '기타입고', '반품'].some(t => String(val(p, P.imptype)).replace(/\s+/g, '') === t || String(val(p, P.impkind)).replace(/\s+/g, '') === t)) continue; // ★ 기타출고·기타입고·반품은 판매가(구매 평균 단가) 계산에서 제외
         const e = ent(c);
         if (!e.name) e.name = String(val(p, P.name)).trim();
         if (!e.asset) e.asset = String(gv(p, ['ASSETNAME', 'AssetName', '자산분류', '자산명'])).trim(); // 자산분류
