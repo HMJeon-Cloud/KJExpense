@@ -123,14 +123,14 @@ rows_out as (
       public.kj_jsround(s.ae) as v39,
       l3.*, s.q, s.a, s.asv, s.sd, s.ae
     from l3, lateral (
-      -- ★ 기타입고 몫(c)은 부서별 이윤에서 뺌: 수량 q − c, 금액 a × (q − c) ÷ q   (실현 수익은 그대로)
-      select case when s0.c > 0 then s0.q0 - s0.c else s0.q0 end as q, s0.a, s0.m, s0.asv, s0.sd, s0.c, s0.q0,
-             case when s0.c > 0 then s0.a::float8 * (s0.q0 - s0.c)::float8 / s0.q0::float8 else s0.a::float8 end as ae
+      -- ★ 기타입고 몫(c, 판매 반품이면 되돌린 몫으로 음수)은 부서별 이윤에서 뺌: 수량 q − c, 금액 a × (q − c) ÷ q   (실현 수익은 그대로)
+      select case when s0.c <> 0 then s0.q0 - s0.c else s0.q0 end as q, s0.a, s0.m, s0.asv, s0.sd, s0.c, s0.q0,
+             case when s0.c <> 0 then s0.a::float8 * (s0.q0 - s0.c)::float8 / s0.q0::float8 else s0.a::float8 end as ae
       from (select (e ->> 'q')::numeric as q0, (e ->> 'a')::numeric as a, e ->> 'm' as m, e ->> 'as' as asv, public.kj_nz(e ->> 'dp') as sd,
                    coalesce((e ->> 'c')::numeric, 0) as c
             from jsonb_array_elements(l3.sales) e) s0
     ) s
-    where not l3.no_sale and length(s.m) = 6 and not (s.c > 0 and s.q0 - s.c <= 0.000000001)
+    where not l3.no_sale and length(s.m) = 6 and not (s.c <> 0 and abs(s.q0 - s.c) <= 0.000000001)
   ) y, lateral (
     select * from (values
       -- 39: 판매 부서 이윤

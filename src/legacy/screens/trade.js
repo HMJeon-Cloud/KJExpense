@@ -27,7 +27,7 @@ export default function init() {
   };
   const formatNumber = num => {
     if (num === null || num === undefined || isNaN(Number(num))) return '0';
-    return Math.round(Number(num)).toLocaleString('ko-KR');
+    return (Math.round(Number(num)) || 0).toLocaleString('ko-KR'); // -0 → 0
   };
   // ── 이윤 9종 (부서별) 컬럼 정의 ─────────────────────────────────────
   //   dept: 이 컬럼이 대응하는 부서명 (구매 데이터 dept / 실자재투입내역 DeptName 과 정확히 일치)
@@ -103,9 +103,14 @@ export default function init() {
     const ins = (pRows || []).map((r, ix) => ({ d: dOf(r), ix, left: qOf(r), other: false }))
       .concat(inRows.map((r, ix) => ({ d: dOf(r), ix: 1e6 + ix, left: Math.abs(qOf(r)), other: true })))
       .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.ix - b.ix));
-    let pi = 0;
+    let pi = 0, outCov = 0;   // outCov: 아직 되돌려지지 않은 기타입고 몫 판매 수량
     (sRows || []).forEach((sr, si) => {
       let left = qOf(sr);
+      if (left < 0) {   // 판매 반품: 앞서 기타입고 몫으로 판 수량을 먼저 되돌림 (음수)
+        const r = Math.min(-left, outCov);
+        cov[si] = -r; outCov -= r;
+        return;
+      }
       while (left > 1e-9) {
         while (pi < ins.length && ins[pi].left <= 1e-9) pi++;
         if (pi >= ins.length) break;
@@ -113,6 +118,7 @@ export default function init() {
         if (ins[pi].other) cov[si] += q;
         ins[pi].left -= q; left -= q;
       }
+      outCov += cov[si];
     });
     return cov;
   };
@@ -1080,7 +1086,7 @@ export default function init() {
         // ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번 ItemNo 로)
         const otherOutMap = Object.create(null); // LOT 키 → { qty, rows }
         otherOutRaw.forEach(o => {
-          const k = lotKeyOf(o.keys);
+          const k = lotKeyOf(o.keys) || o.keys.find(c => sDataMap[c]) || null;   // 구매 LOT 이 없으면 판매(또는 기타입고)만 있는 LOT
           if (!k) return;
           const e = otherOutMap[k] || (otherOutMap[k] = { qty: 0, rows: [] });
           e.qty += o.qty; e.rows.push(o.row);
@@ -1487,7 +1493,7 @@ export default function init() {
               }
               // 이윤 9종 (판매 발행월 기준 누적) — 기타입고 몫 수량은 빼고 계산 (실현 수익은 그대로)
               const __q = parseNum(getVal(s, 'QTY', '수량')), __a = Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액'))), __c = __cov[__si] || 0;
-              if (__c > 0 && __q - __c <= 1e-9) return;   // 전부 기타입고 몫 → 이윤 없음
+              if (__c !== 0 && Math.abs(__q - __c) <= 1e-9) return;   // 전부 기타입고 몫(또는 그 반품) → 이윤 없음
               const pv = computeProfits({
                 tradeAsset: isTradeAsset(p0),
                 saleDeptAsset: isSaleDeptAsset(s),
@@ -1495,8 +1501,8 @@ export default function init() {
                 itemNo: kw.itemNo || '', lotNo: lo.lotNo || '', ym: lym,
                 isSynth: isSyn, lotDept: dp,
                 sellBuy: sellBuy, sellSyn: sellSyn, proc: procU, unitWon: unitWon,
-                saleQty: __c > 0 ? __q - __c : __q,
-                saleAmt: __c > 0 ? __a * (__q - __c) / __q : __a
+                saleQty: __c !== 0 ? __q - __c : __q,
+                saleAmt: __c !== 0 ? __a * (__q - __c) / __q : __a
               });
               // ★ 월 귀속 기준
               //   합성 품목 : 구매 계열(운영지원·글로벌구매·영업지원·소재운영지원·SCM·소재영업지원) = 제품 입고월(LOT)
@@ -2447,6 +2453,8 @@ export default function init() {
         const isFirst = i === 0;
         const __inRowSet = new Set(lotObj.inRows || []);
         const __segIsIn = !!(seg && seg.p && __inRowSet.has(seg.p));   // 기타입고 건에 배정된 행 → 부서별 이윤 없음
+        // 판매 반품(음수) 중 기타입고 몫 판매를 되돌린 수량 (음수) → 그만큼 부서별 이윤에서 뺌
+        const __retCov = (s && __inRowSet.size && parseNum(getVal(s, 'QTY', '수량')) < 0) ? (() => { const sr = lotObj.sRows || []; const cv = inCoverOf(lotObj.pRows, lotObj.inRows, sr); const ix = sr.indexOf(s); return ix >= 0 ? cv[ix] : 0; })() : 0;
         // 자산순번 36·37 LOT 의 이윤(LOT 전체 1회)을 표시할 행: 기타출고가 아닌 첫 행 (없으면 첫 행)
         const __pvRow = (() => { const ix = __segs.findIndex(x => !x.outUsed && !x.retUsed && (lotObj.inRows || []).indexOf(x.p) < 0); return ix < 0 ? 0 : ix; })();
         const isLast = i === __segCount - 1;
@@ -2623,7 +2631,7 @@ export default function init() {
             noSales: true, tradeAsset: isTradeAsset(__pSeg), itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '',
             ym: __ymSeg, isSynth: __isSynLot, lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg,
             proc: __procSeg != null ? __procSeg : __procW, unitWon: __unitWonSeg, saleQty: totalPQty - (lotObj.totalInQty || 0) - (lotObj.totalRetQty || 0), saleAmt: 0
-          }) : (__segIsIn || (seg && seg.retUsed)) ? null : (seg && seg.outUsed) ? ((__isSynLot || __noSaleLot) ? null : computeProfits({
+          }) : (__segIsIn || (seg && seg.retUsed) || (__retCov !== 0 && Math.abs(segQty - __retCov) <= 1e-9)) ? null : (seg && seg.outUsed) ? ((__isSynLot || __noSaleLot) ? null : computeProfits({
             noSales: true, tradeAsset: true, isSynth: false,
             itemNo: (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '', lotNo: lotObj.lotNo || '', ym: __ymSeg,
             lotDept: __deptSeg, sellBuy: __sellBuySeg, sellSyn: __sellSynSeg, proc: __procW,
@@ -2642,8 +2650,8 @@ export default function init() {
             sellSyn: __sellSynSeg,
             proc: __procSeg != null ? __procSeg : __procW,
             unitWon: __unitWonSeg,
-            saleQty: __noSaleLot ? totalPQty : segQty,
-            saleAmt: __noSaleLot ? 0 : Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액')) * segRatio)
+            saleQty: __noSaleLot ? totalPQty : segQty - __retCov,
+            saleAmt: __noSaleLot ? 0 : Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액')) * segRatio) * (__retCov !== 0 && segQty ? (segQty - __retCov) / segQty : 1)
           }) : null;
           return PROFIT_COLS.map(pc => /*#__PURE__*/React.createElement("td", {
             key: 'pv-' + pc.key,

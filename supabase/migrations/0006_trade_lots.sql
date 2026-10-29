@@ -112,18 +112,6 @@ ret as (
   where d.imp_type = '반품' and d.lot_u <> '' and coalesce(k1.key, k2.key, a1.key, a2.key) is not null
   group by 1
 ),
--- ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번)   ※ otherOutMap
-otherout as (
-  select coalesce(k1.key, k2.key, a1.key, a2.key) as key, sum(abs(d.qty)) as oqty,
-    jsonb_agg(jsonb_build_object('q', abs(d.qty), 'm', substr(regexp_replace(d.pdate, '[^0-9]', '', 'g'), 1, 6)) order by d.id) as outs
-  from p1 d
-  left join pkeys k1 on k1.key = d.lot_u || '_' || d.item_u
-  left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
-  left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
-  left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
-  where d.imp_type = '기타출고' and d.lot_u <> '' and coalesce(k1.key, k2.key, a1.key, a2.key) is not null
-  group by 1
-),
 -- 실자재투입: 생산에 투입된 원료(자재 LOT RealLotNo + 자재 품번 MatItemNo) 수량   ※ matUseMap
 mu0 as materialized (
   select upper(public.kj_clean(public.kj_v(d, 'REALLOTNO', '자재LOTNO'))) as lot_u,
@@ -178,6 +166,20 @@ otherin0 as materialized (
   where d.imp_type = '기타입고' and d.lot_u <> ''
 ),
 otherin as (select key, sum(q) as iqty from otherin0 where key is not null group by key),
+-- ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번)   ※ otherOutMap
+otherout as (
+  select coalesce(k1.key, k2.key, a1.key, a2.key, s1k.key, s2k.key) as key, sum(abs(d.qty)) as oqty,
+    jsonb_agg(jsonb_build_object('q', abs(d.qty), 'm', substr(regexp_replace(d.pdate, '[^0-9]', '', 'g'), 1, 6)) order by d.id) as outs
+  from p1 d
+  left join pkeys k1 on k1.key = d.lot_u || '_' || d.item_u
+  left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
+  left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
+  left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
+  left join skeys s1k on s1k.key = d.lot_u || '_' || d.item_u     -- 구매 LOT 이 없으면 판매(또는 기타입고)만 있는 LOT
+  left join skeys s2k on s2k.key = d.lot_u || '_' || d.itemalt_u
+  where d.imp_type = '기타출고' and d.lot_u <> '' and coalesce(k1.key, k2.key, a1.key, a2.key, s1k.key, s2k.key) is not null
+  group by 1
+),
 -- 부대비용   ※ blBaseInfoMap(8100011) / blExpenseMap
 e1 as materialized (select id, d, public.kj_clean(public.kj_v(d, 'BLNO', 'BL번호')) as bl, public.kj_clean(public.kj_v(d, 'UMEXPENSEITEM', '비용항목코드')) as code from e0),
 bl_base as (  -- 같은 BL 이 여러 행이면 마지막 행
@@ -278,11 +280,26 @@ sinb as materialized (
   select id, key, q, sum(q) over (partition by key order by bd collate "C", id rows unbounded preceding) as s_hi
   from (select sr.id, sr.key, greatest(sr.qty, 0) as q, regexp_replace(coalesce(sr.bdate, ''), '[^0-9]', '', 'g') as bd from sr where sr.key in (select key from otherin)) x
 ),
-cov as (
+cov0 as (
   select s.id, sum(greatest(0, least(s.s_hi, i.i_hi) - greatest(s.s_hi - s.q, i.i_hi - i.q))) as c
   from sinb s join inb i on i.key = s.key and i.other
   group by s.id
 ),
+-- 판매 반품(음수)은 앞서 기타입고 몫으로 판 수량을 먼저 되돌림: 되돌린 누계 R = N + min(0, min(C − N))   (C = 기타입고 몫 누계, N = 반품 수량 누계)
+covr as (
+  select id, qty, cpos, r - coalesce(lag(r) over (partition by key order by bd collate "C", id), 0) as rev
+  from (
+    select id, key, bd, qty, cpos, nabs + least(0, min(cc - nabs) over (partition by key order by bd collate "C", id rows unbounded preceding)) as r
+    from (
+      select sr.id, sr.key, sr.qty, regexp_replace(coalesce(sr.bdate, ''), '[^0-9]', '', 'g') as bd, coalesce(c0.c, 0) as cpos,
+        sum(coalesce(c0.c, 0)) over w as cc, sum(case when sr.qty < 0 then -sr.qty else 0 end) over w as nabs
+      from sr left join cov0 c0 on c0.id = sr.id
+      where sr.key in (select key from otherin)
+      window w as (partition by sr.key order by regexp_replace(coalesce(sr.bdate, ''), '[^0-9]', '', 'g') collate "C", sr.id rows unbounded preceding)
+    ) x
+  ) y
+),
+cov as (select id, case when qty < 0 then -rev else cpos end as c from covr),
 smon as (select key, bym, sum(amt - qty * margin_unit) as v from sr where length(bym) = 6 group by key, bym),
 stot as (
   select a.key, a.s_qty, a.s_amt, a.s_date, b.monthly, a.sales

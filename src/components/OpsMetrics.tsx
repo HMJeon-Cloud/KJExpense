@@ -74,6 +74,8 @@ const BK = ['0-90', '91-180', '181-365', '365+', '미상'] as const;
 const BK_L: Record<string, string> = { '0-90': '90일 이하', '91-180': '91~180일', '181-365': '181~365일', '365+': '1년 넘음', '미상': '입고일 없음' };
 const BK_C: Record<string, string> = { '0-90': '#9cc3f5', '91-180': '#f5c26b', '181-365': '#f08a4b', '365+': '#d93c3c', '미상': '#cbd5e1' };
 const bkOf = (age: number | null) => (age == null ? '미상' : age <= 90 ? '0-90' : age <= 180 ? '91-180' : age <= 365 ? '181-365' : '365+');
+// 수량: 소수점 이하 최대 4자리까지 (0.1·0.0005 같은 값이 0 으로 보이지 않게)
+const fmtQ = (n: number | null | undefined) => (n == null || isNaN(n) ? '-' : (Math.round(n * 10000) / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 4 }));
 const fmtDate = (s: string) => { const d = String(s || '').replace(/[^0-9]/g, ''); return d.length >= 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : '-'; };
 /** 수입업체 = 수입처 코드가 3 으로 시작 ("이름 (코드)" 의 괄호 안) */
 export const isImportVendor = (v: string) => /\(\s*3[^()]*\)\s*$/.test(String(v || ''));
@@ -436,7 +438,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
                           <td className={it.old > 0 ? 'neg' : ''}>{fmt(it.old)}</td><td className="mut">{it.maxAge}일</td><td />
                         </tr>,
                         ...(oi ? it.lots.slice(0, nl).map((l, i) => (
-                          <tr key={k + '|' + l[3] + '|' + i} className="l3"><td>LOT {l[3]}</td><td className="mut">수량 {fmt(l[6])}</td><td>{fmt(l[7])}</td><td colSpan={3} style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: BK_C[bkOf(l[8])], marginRight: 5 }} />{BK_L[bkOf(l[8])]}</td><td className={(l[8] ?? 0) > 180 ? 'neg' : ''}>{l[8] == null ? '-' : l[8] + '일'} · {fmtDate(l[4])}</td><td className="mut">{fmtDate(l[5])}</td></tr>
+                          <tr key={k + '|' + l[3] + '|' + i} className="l3"><td>LOT {l[3]}</td><td className="mut">수량 {fmtQ(l[6])}</td><td>{fmt(l[7])}</td><td colSpan={3} style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: BK_C[bkOf(l[8])], marginRight: 5 }} />{BK_L[bkOf(l[8])]}</td><td className={(l[8] ?? 0) > 180 ? 'neg' : ''}>{l[8] == null ? '-' : l[8] + '일'} · {fmtDate(l[4])}</td><td className="mut">{fmtDate(l[5])}</td></tr>
                         )) : []),
                         ...(oi && it.lots.length > 10 ? [<tr key={k + '-m'} className="l3m"><td colSpan={8}><More n={nl} total={it.lots.length} step={10} set={n => setNLots(o => ({ ...o, [k]: n }))} unit=" LOT" /></td></tr>] : []),
                       ];
@@ -456,7 +458,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
                     <tbody>{(ops.invGap || []).slice(0, nGap).map((g, i) => (
                       <tr key={g[2] + g[1] + i} className={isAdmin ? 'clk' : ''} onClick={() => isAdmin && nav('/settings/verify?lot=' + encodeURIComponent(g[2]))}>
                         <td>{g[2]}</td><td className="mut" style={{ fontFamily: 'var(--font-body)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }} title={g[1]}>{g[1]}</td><td className="mut" style={{ fontFamily: 'var(--font-body)' }}>{unitOf(g[0])}</td>
-                        <td>{fmt(g[3])}</td><td>{fmt(g[4])}</td><td className={g[3] - g[4] > 0 ? 'neg' : 'pos'}>{sgn(g[3] - g[4])}{fmt(Math.abs(g[3] - g[4]))}</td><td>{fmt(g[5])}</td><td className="mut">{fmt(g[6])}</td>
+                        <td>{fmtQ(g[3])}</td><td>{fmtQ(g[4])}</td><td className={g[3] - g[4] > 0 ? 'neg' : 'pos'}>{sgn(g[3] - g[4])}{fmtQ(Math.abs(g[3] - g[4]))}</td><td>{fmt(g[5])}</td><td className="mut">{fmt(g[6])}</td>
                       </tr>))}</tbody>
                   </table></div>
                   <More n={Math.min(nGap, (ops.invGap || []).length)} total={(ops.invGap || []).length} step={15} set={setNGap} unit=" LOT" />
