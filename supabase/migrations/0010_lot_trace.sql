@@ -39,7 +39,7 @@ select jsonb_build_object(
   'matCols', (select coalesce(jsonb_agg(distinct k), '[]'::jsonb) from (select jsonb_object_keys(public.kj_norm(data)) as k from public.rows where dataset = 'matinput' limit 200) x),
   'calc', coalesce((select jsonb_agg(jsonb_build_object(
       'LOT 키', lot_key, '품번', item_no, '품명', item_name, '부서', dept, '구매수량', p_qty, '판매수량', s_qty, '폐기수량', disposal_qty,
-      '생산투입', mat_qty, '기타출고', out_qty, '재고수량', inv_qty, '재고금액', round(inv_amt), '자산순번', asset_seq))
+      '생산투입', mat_qty, '기타출고', out_qty, '기타입고', in_qty, '재고수량', inv_qty, '재고금액', round(inv_amt), '자산순번', asset_seq))
     from public.trade_lot_summary() t where upper(public.kj_clean(t.lot_no)) = (select lot from q)), '[]'::jsonb)
 )
 $$;

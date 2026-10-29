@@ -91,7 +91,7 @@ mat_profit as materialized (
 ),
 rows_out as (
   -- (A) AssetSeq 36·37: 판매 없음 → 구매 부서 이윤만, 입고월에 1회   ※ pv0
-  select l3.lot_key_buy as k, l3.lym as ym, public.kj_jsround((l3.sell_buy::float8 - l3.unit_won) * l3.p_qty::float8) as v
+  select l3.lot_key_buy as k, l3.lym as ym, public.kj_jsround((l3.sell_buy::float8 - l3.unit_won) * (l3.p_qty - l3.in_qty)::float8) as v   -- 기타입고 수량 제외
   from l3 where l3.no_sale and not l3.is_syn and l3.lot_key_buy is not null and l3.sell_buy <> 0 and length(l3.lym) = 6   -- ※ pv0 는 tradeAsset 을 넘기지 않음 → 합성 여부만 봄
   union all
   select mp.dept_key, l3.lym, mp.v
@@ -120,13 +120,17 @@ rows_out as (
                when l3.is_syn then null
                when sd = '운영지원팀' then 'ops' when sd = '글로벌구매팀' then 'globalpur' when sd = '소재운영지원팀' then 'matops' when sd = 'SCM팀' then 'scm' end
         else null end as k39,
-      public.kj_round(s.a) as v39,
-      l3.*, s.q, s.a, s.asv, s.sd
+      public.kj_jsround(s.ae) as v39,
+      l3.*, s.q, s.a, s.asv, s.sd, s.ae
     from l3, lateral (
-      select (e ->> 'q')::numeric as q, (e ->> 'a')::numeric as a, e ->> 'm' as m, e ->> 'as' as asv, public.kj_nz(e ->> 'dp') as sd
-      from jsonb_array_elements(l3.sales) e
+      -- ★ 기타입고 몫(c)은 부서별 이윤에서 뺌: 수량 q − c, 금액 a × (q − c) ÷ q   (실현 수익은 그대로)
+      select case when s0.c > 0 then s0.q0 - s0.c else s0.q0 end as q, s0.a, s0.m, s0.asv, s0.sd, s0.c, s0.q0,
+             case when s0.c > 0 then s0.a::float8 * (s0.q0 - s0.c)::float8 / s0.q0::float8 else s0.a::float8 end as ae
+      from (select (e ->> 'q')::numeric as q0, (e ->> 'a')::numeric as a, e ->> 'm' as m, e ->> 'as' as asv, public.kj_nz(e ->> 'dp') as sd,
+                   coalesce((e ->> 'c')::numeric, 0) as c
+            from jsonb_array_elements(l3.sales) e) s0
     ) s
-    where not l3.no_sale and length(s.m) = 6
+    where not l3.no_sale and length(s.m) = 6 and not (s.c > 0 and s.q0 - s.c <= 0.000000001)
   ) y, lateral (
     select * from (values
       -- 39: 판매 부서 이윤
@@ -137,7 +141,7 @@ rows_out as (
       (case when y.asv <> '39' and not y.trade_asset and y.is_syn and y.sell_syn <> 0 and y.proc_u is not null then (case when y.is_m then 'matprod' else 'synth' end) end, public.kj_jsround((y.sell_syn::float8 - y.proc_u::float8) * y.q::float8)),
       -- ③ 영업 이윤 = 판매금액 − (넘겨받는 단가 × 판매수량)
       (case when y.asv <> '39' and (case when y.is_syn and not y.trade_asset then y.sell_syn else y.sell_buy end) <> 0 then (case when y.is_m then 'matsales' else 'sales' end) end,
-       public.kj_jsround(y.a::float8 - (case when y.is_syn and not y.trade_asset then y.sell_syn else y.sell_buy end)::float8 * y.q::float8))
+       public.kj_jsround(y.ae - (case when y.is_syn and not y.trade_asset then y.sell_syn else y.sell_buy end)::float8 * y.q::float8))
     ) as t(k, v) where t.k is not null
   ) x
 ),
