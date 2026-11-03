@@ -1112,7 +1112,8 @@ export default function init() {
         const disposalByKey = Object.create(null);
         Object.keys(disposalMap).forEach(key => {
           (disposalMap[key] || []).forEach(d => {
-            const k = lotKeyOf(d.keys || [key]);
+            const __ks = d.keys || [key];
+            const k = lotKeyOf(__ks) || __ks.find(c => sDataMap[c]) || null;   // 구매 LOT 이 없으면 판매(판매반품·기타입고)만 있는 LOT
             if (k) disposalByKey[k] = (disposalByKey[k] || 0) + Math.abs(parseNum(d.qty));
           });
         });

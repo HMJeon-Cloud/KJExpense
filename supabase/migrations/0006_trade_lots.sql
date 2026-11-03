@@ -91,16 +91,6 @@ pm as materialized (  -- 구매 LOT 맵 (폐기 제외, 금액>0 또는 수량>0
 --   정확히 같은 (LOT_품번) 키가 있으면 그것, 없으면 구매 행의 보조 품번(ItemNo)으로 찾음   ※ trade.js lotKeyOf
 pkeys as materialized (select distinct key from pm where lot_u <> ''),
 altkeys as materialized (select distinct on (lot_u || '_' || itemalt_u) lot_u || '_' || itemalt_u as akey, key from pm where lot_u <> '' and itemalt_u <> '' order by lot_u || '_' || itemalt_u, id),
-disposal as (  -- 폐기 수량: 폐기 행마다 LOT 키 하나에 배정, Σ|qty|   ※ disposalByKey
-  select coalesce(k1.key, k2.key, a1.key, a2.key) as key, sum(abs(d.qty)) as dqty
-  from p1 d
-  left join pkeys k1 on k1.key = d.lot_u || '_' || d.item_u
-  left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
-  left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
-  left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
-  where d.imp_type = '' and d.imp_kind = '폐기' and d.lot_u <> ''
-  group by 1
-),
 -- ★ 반품: ItemNoChk + LOTNo 가 같은 구매 LOT 에 수량·금액(음수)을 그대로 더함 (없으면 보조 품번, 그래도 없으면 반영 안 함)   ※ returnMap
 ret as (
   select coalesce(k1.key, k2.key, a1.key, a2.key) as key, sum(d.qty) as rqty, sum(public.kj_round(d.amt)) as ramt
@@ -166,6 +156,18 @@ otherin0 as materialized (
   where d.imp_type = '기타입고' and d.lot_u <> ''
 ),
 otherin as (select key, sum(q) as iqty from otherin0 where key is not null group by key),
+disposal as (  -- 폐기 수량: 폐기 행마다 LOT 키 하나에 배정, Σ|qty|   ※ disposalByKey
+  select coalesce(k1.key, k2.key, a1.key, a2.key, s1k.key, s2k.key) as key, sum(abs(d.qty)) as dqty
+  from p1 d
+  left join pkeys k1 on k1.key = d.lot_u || '_' || d.item_u
+  left join pkeys k2 on k2.key = d.lot_u || '_' || d.itemalt_u
+  left join altkeys a1 on a1.akey = d.lot_u || '_' || d.item_u
+  left join altkeys a2 on a2.akey = d.lot_u || '_' || d.itemalt_u
+  left join skeys s1k on s1k.key = d.lot_u || '_' || d.item_u     -- 구매 LOT 이 없으면 판매(판매반품·기타입고)만 있는 LOT
+  left join skeys s2k on s2k.key = d.lot_u || '_' || d.itemalt_u
+  where d.imp_type = '' and d.imp_kind = '폐기' and d.lot_u <> ''
+  group by 1
+),
 -- ★ 기타출고: ItemNoChk + LOTNo 가 같은 구매 LOT 에서 수량을 뺌 (없으면 보조 품번)   ※ otherOutMap
 otherout as (
   select coalesce(k1.key, k2.key, a1.key, a2.key, s1k.key, s2k.key) as key, sum(abs(d.qty)) as oqty,
