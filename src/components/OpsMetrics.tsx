@@ -114,6 +114,12 @@ function MonthBars({ months, a, b, aLbl, bLbl, fmtV = kor, colorA = C.margin, co
   );
 }
 
+/** 환율 영향 금액 표현: + = 원가 더 듦(손해, 빨강) · − = 덜 듦(이익, 파랑) */
+const fxWord = (v: number | null | undefined, f: (n: number) => string = kor) =>
+  v == null ? '-' : v > 0 ? f(v) + ' 부담' : v < 0 ? f(-v) + ' 절감' : '0';
+function FxAmt({ v, f = fmt }: { v: number | null; f?: (n: number) => string }) {
+  return v == null ? <>-</> : <span className={v > 0 ? 'neg' : v < 0 ? 'pos' : 'mut'}>{fxWord(v, f)}</span>;
+}
 function Kpi({ l, v, s, tone }: { l: string; v: string; s?: string; tone?: 'neg' | 'pos' }) {
   return <div className="ops-kpi"><span>{l}</span><b className={tone || ''}>{v}</b>{s && <small>{s}</small>}</div>;
 }
@@ -235,7 +241,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
         const diff = curR != null && base != null ? curR - base : null;
         const share = totCur > 0 ? o.s[ci] / totCur * 100 : 0;
         const alert = diff != null && diff <= -5 && share >= 1;
-        return { k, sCur: o.s[ci], mCur: o.s[ci] - o.c[ci], curR, base, diff, share, alert, rate, sAll: sum(o.s) };
+        return { k, sCur: o.s[ci], mCur: o.s[ci] - o.c[ci], curR, base, diff, share, alert, rate, sAll: sum(o.s), s: o.s, c: o.c };
       }).filter(x => x.sAll !== 0);
     };
     const byItem = marginBy(2), byCust = marginBy(3);
@@ -272,6 +278,9 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
       if (r[1].slice(0, 4) === year && r[1] <= cur) { o.yf += r[3]; o.yw += r[4]; }
     });
     const rates = fxBase.rates[year] || {};
+    // 통화별 × 월별 합계 (월별 상세용 — 조회 기간 + 올해 1월부터)
+    const fxByYm: Record<string, Record<string, { f: number; w: number }>> = {};
+    ops.fx.forEach(r => { if (r[1] > cur) return; const o = fxByYm[r[2]] || (fxByYm[r[2]] = {}); const e = o[r[1]] || (o[r[1]] = { f: 0, w: 0 }); e.f += r[3]; e.w += r[4]; });
     const fxList = Object.entries(curs).map(([c, o]) => {
       const rate = months.map((_, i) => (o.f[i] > 0 ? o.w[i] / o.f[i] : null));
       const bi = [ci - 3, ci - 2, ci - 1].filter(i => i >= 0);
@@ -283,7 +292,16 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
       const coImpact = rc != null && co ? o.f[ci] * (rc - co) : null;           // 기준월: 회사 기준 대비
       const coYtd = co && o.yf > 0 ? o.yw - o.yf * co : null;                      // 올해 누적: Σ외화×(환율 − 회사 기준)
       const yAvg = o.yf > 0 ? o.yw / o.yf : null;
-      return { c, fCur: o.f[ci], wCur: o.w[ci], rc, base, impact, co, coImpact, coYtd, yAvg, rate, fAll: sum(o.f) + o.yf };
+      // 월별 상세: 월 평균 환율 · 회사 기준 대비 · 직전 3개월 평균 대비 (그 달 기준)
+      const yms = Object.keys(fxByYm[c] || {}).sort();
+      const monthly = yms.map((ym, i) => {
+        const e = fxByYm[c][ym]; const r2 = e.f > 0 ? e.w / e.f : null;
+        const prev3 = yms.slice(Math.max(0, i - 3), i).map(y2 => fxByYm[c][y2]);
+        const bf2 = sum(prev3.map(x => x.f)), bw2 = sum(prev3.map(x => x.w));
+        const b2 = bf2 > 0 && prev3.length === 3 ? bw2 / bf2 : null;
+        return { ym, f: e.f, w: e.w, r: r2, coImp: r2 != null && co ? e.f * (r2 - co) : null, b3: b2, m3: r2 != null && b2 != null ? e.f * (r2 - b2) : null };
+      }).reverse(); // 최근 달이 위
+      return { c, fCur: o.f[ci], wCur: o.w[ci], rc, base, impact, co, coImpact, coYtd, yAvg, rate, monthly, fAll: sum(o.f) + o.yf };
     }).filter(x => x.fAll > 0).sort((a, b) => b.wCur - a.wCur || b.fAll - a.fAll);
     const fxImpact = sum(fxList.map(x => x.impact || 0));
     const coImpact = sum(fxList.map(x => x.coImpact || 0));
@@ -305,6 +323,8 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
   const [nLots, setNLots] = useState<Record<string, number>>({});
   const [openCap, setOpenCap] = useState<Record<string, boolean>>({});
   const [showGap, setShowGap] = useState(false);
+  const [openMargin, setOpenMargin] = useState<Record<string, boolean>>({});   // ③ 행 펼침 (월별 상세)
+  const [openFx, setOpenFx] = useState<Record<string, boolean>>({});           // ⑦ 통화 펼침 (월별 상세)
   const [nGap, setNGap] = useState(15);
   // 회사 기준 환율 편집 (관리자)
   const [fxEdit, setFxEdit] = useState<Record<string, string> | null>(null);
@@ -438,7 +458,7 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
                           <td className={it.old > 0 ? 'neg' : ''}>{fmt(it.old)}</td><td className="mut">{it.maxAge}일</td><td />
                         </tr>,
                         ...(oi ? it.lots.slice(0, nl).map((l, i) => (
-                          <tr key={k + '|' + l[3] + '|' + i} className="l3"><td>LOT {l[3]}</td><td className="mut">수량 {fmtQ(l[6])}</td><td>{fmt(l[7])}</td><td colSpan={3} style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: BK_C[bkOf(l[8])], marginRight: 5 }} />{BK_L[bkOf(l[8])]}</td><td className={(l[8] ?? 0) > 180 ? 'neg' : ''}>{l[8] == null ? '-' : l[8] + '일'} · {fmtDate(l[4])}</td><td className="mut">{fmtDate(l[5])}</td></tr>
+                          <tr key={k + '|' + l[3] + '|' + i} className="l3"><td>LOT {l[3]}</td><td className="mut">수량 {fmtQ(l[6])}</td><td>{fmt(l[7])}</td><td colSpan={3} style={{ textAlign: 'center' }}><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: BK_C[bkOf(l[8])], marginRight: 5 }} />{BK_L[bkOf(l[8])]}</td><td className={(l[8] ?? 0) > 180 ? 'neg' : ''}>{l[8] == null ? '-' : l[8] + '일'} · {fmtDate(l[4])}</td><td className="mut">{l[5] ? fmtDate(l[5]) : <span title="이 LOT 은 판매 내역이 아직 없습니다 (구매·생산입고만 있는 재고)">판매 없음</span>}</td></tr>
                         )) : []),
                         ...(oi && it.lots.length > 10 ? [<tr key={k + '-m'} className="l3m"><td colSpan={8}><More n={nl} total={it.lots.length} step={10} set={n => setNLots(o => ({ ...o, [k]: n }))} unit=" LOT" /></td></tr>] : []),
                       ];
@@ -481,19 +501,38 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
             return <>
               <p className="lead">{rNow == null ? `${curL} 판매가 없습니다.` : `${curL} 전체 마진율 ${rNow.toFixed(1)}%${rPrev != null ? ` (이전 ${prevMonths.length}개월 ${rPrev.toFixed(1)}%, ${sgn(rNow - rPrev)}${Math.abs(rNow - rPrev).toFixed(1)}%p)` : ''}.`} {alerts.length ? `마진율이 평소보다 5%p 넘게 떨어진 ${mTab === 'item' ? '품목' : '청구처'} ${alerts.length}곳을 맨 위에 표시했습니다.` : '평소보다 크게 떨어진 곳은 없습니다.'}</p>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <span className="seg"><button className={mTab === 'item' ? 'on' : ''} onClick={() => { setMTab('item'); setNMargin(15); }}>품목별</button><button className={mTab === 'cust' ? 'on' : ''} onClick={() => { setMTab('cust'); setNMargin(15); }}>청구처별</button></span>
+                <span className="seg"><button className={mTab === 'item' ? 'on' : ''} onClick={() => { setMTab('item'); setNMargin(15); setOpenMargin({}); }}>품목별</button><button className={mTab === 'cust' ? 'on' : ''} onClick={() => { setMTab('cust'); setNMargin(15); setOpenMargin({}); }}>청구처별</button></span>
                 {alerts.length > 0 && <div className="ops-alert">{alerts.slice(0, 6).map(a => <span key={a.k}>▼ {a.k.replace(/ \([^)]*\)$/, '')} {a.diff!.toFixed(1)}%p</span>)}</div>}
               </div>
               <div className="tbl-wrap"><table>
                 <thead><tr><th>{mTab === 'item' ? '품목' : '청구처'}</th><th>{curL} 매출</th><th>매출 비중</th><th>{curL} 마진</th><th>{curL} 마진율</th><th>이전 {prevMonths.length}개월 마진율</th><th>변화</th><th style={{ width: 130 }}>월별 마진율</th></tr></thead>
-                <tbody>{list.slice(0, nMargin).map(x => (
-                  <tr key={x.k} className={x.alert ? 'warn' : ''}>
-                    <td title={x.k}>{x.k}</td><td>{fmt(x.sCur)}</td><td className="mut">{x.share.toFixed(1)}%</td><td className={x.mCur < 0 ? 'neg' : ''}>{fmt(x.mCur)}</td>
-                    <td>{x.curR == null ? '-' : x.curR.toFixed(1) + '%'}</td><td className="mut">{x.base == null ? '-' : x.base.toFixed(1) + '%'}</td>
-                    <td className={x.diff == null ? '' : x.diff < 0 ? 'neg' : 'pos'}>{x.diff == null ? '-' : sgn(x.diff) + Math.abs(x.diff).toFixed(1) + '%p'}</td>
-                    <td><Line vals={x.rate} color={x.alert ? '#d93c3c' : C.margin} /></td>
-                  </tr>
-                ))}</tbody>
+                <tbody>{list.slice(0, nMargin).flatMap(x => {
+                  const open = !!openMargin[x.k];
+                  const rows = [
+                    <tr key={x.k} className={(x.alert ? 'warn ' : '') + 'clk'} onClick={() => setOpenMargin(o => ({ ...o, [x.k]: !o[x.k] }))} title="누르면 월별 상세가 펼쳐집니다">
+                      <td title={x.k}><span className="caret">{open ? '▾' : '▸'}</span>{x.k}</td><td>{fmt(x.sCur)}</td><td className="mut">{x.share.toFixed(1)}%</td><td className={x.mCur < 0 ? 'neg' : ''}>{fmt(x.mCur)}</td>
+                      <td>{x.curR == null ? '-' : x.curR.toFixed(1) + '%'}</td><td className="mut">{x.base == null ? '-' : x.base.toFixed(1) + '%'}</td>
+                      <td className={x.diff == null ? '' : x.diff < 0 ? 'neg' : 'pos'}>{x.diff == null ? '-' : sgn(x.diff) + Math.abs(x.diff).toFixed(1) + '%p'}</td>
+                      <td><Line vals={x.rate} color={x.alert ? '#d93c3c' : C.margin} /></td>
+                    </tr>,
+                  ];
+                  if (open) rows.push(
+                    <tr key={x.k + '|d'} className="l3"><td colSpan={8} style={{ padding: '8px 10px' }}>
+                      <div className="ops-note" style={{ marginBottom: 4 }}>{x.k} — 월별 매출·원가·마진율 (판매 발행월 기준)</div>
+                      <MonthBars months={months} a={x.s.map(v => v || null)} b={x.c.map(v => v || null)} aLbl="매출" bLbl="원가" />
+                      <div className="tbl-wrap" style={{ marginTop: 6 }}><table>
+                        <thead><tr><th></th>{months.map(m => <th key={m} style={{ textAlign: 'right' }}>{ymL(m)}</th>)}</tr></thead>
+                        <tbody>
+                          <tr><td className="mut">매출</td>{months.map((m, i) => <td key={m} style={{ textAlign: 'right' }}>{x.s[i] ? fmt(x.s[i]) : '-'}</td>)}</tr>
+                          <tr><td className="mut">원가</td>{months.map((m, i) => <td key={m} style={{ textAlign: 'right' }}>{x.c[i] ? fmt(x.c[i]) : '-'}</td>)}</tr>
+                          <tr><td className="mut">마진</td>{months.map((m, i) => <td key={m} style={{ textAlign: 'right' }} className={x.s[i] - x.c[i] < 0 ? 'neg' : ''}>{x.s[i] || x.c[i] ? fmt(x.s[i] - x.c[i]) : '-'}</td>)}</tr>
+                          <tr><td className="mut">마진율</td>{months.map((m, i) => <td key={m} style={{ textAlign: 'right' }} className={x.rate[i] != null && x.rate[i]! < 0 ? 'neg' : ''}>{x.rate[i] == null ? '-' : x.rate[i]!.toFixed(1) + '%'}</td>)}</tr>
+                        </tbody>
+                      </table></div>
+                    </td></tr>
+                  );
+                  return rows;
+                })}</tbody>
               </table></div>
               <More n={Math.min(nMargin, list.length)} total={list.length} step={15} set={setNMargin} />
             </>;
@@ -576,23 +615,45 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
         <div className="ops-card wide">
           <h3><span className="no">7</span>환율 영향<HelpDot id="ops.fx" /></h3>
           {!db ? <Loading err={err} /> : !db.fxList.length ? <div className="ops-msg">기간 안에 외화 구매가 없거나, 구매 데이터에 통화(CURRNAME)·단가(PRICE)·환율(EXRATE) 열이 없습니다.</div> : <>
-            <p className="lead">{db.fxList.some(x => x.co) ? `${year}년 회사 기준 환율과 비교하면 ${curL} 외화 구매 원가가 ${kor(Math.abs(db.coImpact))} ${db.coImpact >= 0 ? '더 들었고' : '덜 들었고'}, 올해 누적으로는 ${kor(Math.abs(db.coYtd))} ${db.coYtd >= 0 ? '더 들었습니다' : '덜 들었습니다'}.` : `${year}년 회사 기준 환율이 아직 없습니다. ${isAdmin ? '아래 "기준 환율 입력"에서 넣어 주세요.' : ''}`} {db.fxList.some(x => x.impact != null) ? `직전 3개월 평균 환율과 비교하면 ${sgn(db.fxImpact)}${kor(Math.abs(db.fxImpact))} 입니다.` : ''}</p>
+            <p className="lead">{db.fxList.some(x => x.co) ? `${year}년 회사 기준 환율과 비교하면 ${curL} 외화 구매 원가를 ${kor(Math.abs(db.coImpact))} ${db.coImpact > 0 ? '더 부담해 손해' : db.coImpact < 0 ? '아껴 이익' : '차이 없이'}, 올해 누적으로는 ${kor(Math.abs(db.coYtd))} ${db.coYtd > 0 ? '손해' : '이익'}입니다.` : `${year}년 회사 기준 환율이 아직 없습니다. ${isAdmin ? '아래 "기준 환율 입력"에서 넣어 주세요.' : ''}`} {db.fxList.some(x => x.impact != null) ? `직전 3개월 평균 환율 대비로는 ${fxWord(db.fxImpact)}입니다.` : ''} 부담(빨강) = 기준보다 비싸게 사서 손해, 절감(초록) = 싸게 사서 이익. 통화 행을 누르면 월별 상세가 펼쳐집니다.</p>
             <div className="ops-kpis">
-              <Kpi l={`회사 기준 대비 (${curL})`} v={db.fxList.some(x => x.co) ? sgn(db.coImpact) + kor(Math.abs(db.coImpact)) : '-'} tone={db.coImpact > 0 ? 'neg' : db.coImpact < 0 ? 'pos' : undefined} s="+ 는 원가 상승" />
-              <Kpi l={`회사 기준 대비 (${year}년 누적)`} v={db.fxList.some(x => x.co) ? sgn(db.coYtd) + kor(Math.abs(db.coYtd)) : '-'} tone={db.coYtd > 0 ? 'neg' : db.coYtd < 0 ? 'pos' : undefined} s={db.ymsYear.length ? `${ymL(db.ymsYear[0])} ~ ${curL}` : undefined} />
-              <Kpi l="직전 3개월 평균 대비" v={sgn(db.fxImpact) + kor(Math.abs(db.fxImpact))} tone={db.fxImpact > 0 ? 'neg' : db.fxImpact < 0 ? 'pos' : undefined} />
+              <Kpi l={`회사 기준 대비 (${curL})`} v={db.fxList.some(x => x.co) ? fxWord(db.coImpact) : '-'} tone={db.coImpact > 0 ? 'neg' : db.coImpact < 0 ? 'pos' : undefined} s={db.coImpact > 0 ? '기준보다 비싸게 삼 → 손해' : db.coImpact < 0 ? '기준보다 싸게 삼 → 이익' : undefined} />
+              <Kpi l={`회사 기준 대비 (${year}년 누적)`} v={db.fxList.some(x => x.co) ? fxWord(db.coYtd) : '-'} tone={db.coYtd > 0 ? 'neg' : db.coYtd < 0 ? 'pos' : undefined} s={(db.coYtd > 0 ? '손해' : db.coYtd < 0 ? '이익' : '') + (db.ymsYear.length ? ` · ${ymL(db.ymsYear[0])} ~ ${curL}` : '')} />
+              <Kpi l="직전 3개월 평균 대비" v={fxWord(db.fxImpact)} tone={db.fxImpact > 0 ? 'neg' : db.fxImpact < 0 ? 'pos' : undefined} s={db.fxImpact > 0 ? '최근 흐름보다 비싸게 삼 → 손해' : db.fxImpact < 0 ? '최근 흐름보다 싸게 삼 → 이익' : undefined} />
             </div>
             <div className="tbl-wrap"><table>
               <thead><tr><th>통화</th><th>{curL} 외화 구매</th><th>{curL} 평균 환율</th><th>회사 기준 ({year})</th><th>기준 대비 영향</th><th>{year} 평균 · 누적 영향</th><th>직전 3개월 평균</th><th>3개월 대비 영향</th><th style={{ width: 110 }}>월별 평균 환율</th></tr></thead>
-              <tbody>{db.fxList.map(x => <tr key={x.c}>
-                <td>{x.c}</td><td>{fmt(x.fCur)}</td><td>{x.rc == null ? '-' : x.rc.toFixed(2)}</td>
-                <td>{x.co ? fmt(x.co) : <span className="mut">미입력</span>}</td>
-                <td className={x.coImpact == null ? '' : x.coImpact > 0 ? 'neg' : 'pos'}>{x.coImpact == null ? '-' : sgn(x.coImpact) + fmt(Math.abs(x.coImpact))}</td>
-                <td className={x.coYtd == null ? 'mut' : x.coYtd > 0 ? 'neg' : 'pos'}>{x.yAvg == null ? '-' : x.yAvg.toFixed(2)}{x.coYtd != null ? ' · ' + sgn(x.coYtd) + kor(Math.abs(x.coYtd)) : ''}</td>
-                <td className="mut">{x.base == null ? '-' : x.base.toFixed(2)}</td>
-                <td className={x.impact == null ? '' : x.impact > 0 ? 'neg' : 'pos'}>{x.impact == null ? '-' : sgn(x.impact) + fmt(Math.abs(x.impact))}</td>
-                <td><Line vals={x.rate} color="#0ea5e9" w={100} /></td>
-              </tr>)}</tbody>
+              <tbody>{db.fxList.flatMap(x => {
+                const open = !!openFx[x.c];
+                const rows = [
+                  <tr key={x.c} className="clk" onClick={() => setOpenFx(o => ({ ...o, [x.c]: !o[x.c] }))} title="누르면 월별 상세가 펼쳐집니다">
+                    <td><span className="caret">{open ? '▾' : '▸'}</span>{x.c}</td><td>{fmt(x.fCur)}</td><td>{x.rc == null ? '-' : x.rc.toFixed(2)}</td>
+                    <td>{x.co ? fmt(x.co) : <span className="mut">미입력</span>}</td>
+                    <td><FxAmt v={x.coImpact} /></td>
+                    <td><span className="mut">{x.yAvg == null ? '-' : x.yAvg.toFixed(2)}</span>{x.coYtd != null ? <> · <FxAmt v={x.coYtd} f={kor} /></> : null}</td>
+                    <td className="mut">{x.base == null ? '-' : x.base.toFixed(2)}</td>
+                    <td><FxAmt v={x.impact} /></td>
+                    <td><Line vals={x.rate} color="#0ea5e9" w={100} /></td>
+                  </tr>,
+                ];
+                if (open) rows.push(
+                  <tr key={x.c + '|d'} className="l3"><td colSpan={9} style={{ padding: '8px 10px' }}>
+                    <div className="ops-mb-lg"><span>{x.c} 월별 상세 — 입고월 기준 · 올해는 1월부터, 지난해는 조회 기간만</span><span><i style={{ background: '#d93c3c' }} />부담 = 손해</span><span><i style={{ background: '#2c7f2c' }} />절감 = 이익</span></div>
+                    <div className="tbl-wrap"><table>
+                      <thead><tr><th>월</th><th>외화 구매</th><th>원화 금액</th><th>평균 환율</th><th>회사 기준 {x.co ? `(${fmt(x.co)})` : ''} 대비</th><th>직전 3개월 평균</th><th>3개월 대비</th></tr></thead>
+                      <tbody>{x.monthly.map(m => (
+                        <tr key={m.ym} className={m.ym === cur ? 'tot' : ''}>
+                          <td>{ymL(m.ym)}</td><td>{fmt(m.f)}</td><td>{fmt(m.w)}</td><td>{m.r == null ? '-' : m.r.toFixed(2)}</td>
+                          <td><FxAmt v={m.coImp} /></td>
+                          <td className="mut">{m.b3 == null ? '-' : m.b3.toFixed(2)}</td>
+                          <td><FxAmt v={m.m3} /></td>
+                        </tr>
+                      ))}</tbody>
+                    </table></div>
+                  </td></tr>
+                );
+                return rows;
+              })}</tbody>
             </table></div>
             {isAdmin && (fxEdit ? (
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
