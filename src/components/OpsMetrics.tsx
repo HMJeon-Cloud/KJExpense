@@ -294,12 +294,12 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
       const yAvg = o.yf > 0 ? o.yw / o.yf : null;
       // 월별 상세: 월 평균 환율 · 회사 기준 대비 · 직전 3개월 평균 대비 (그 달 기준)
       const yms = Object.keys(fxByYm[c] || {}).sort();
-      const monthly = yms.map((ym, i) => {
+      let cumAcc = 0;
+      const monthly = yms.map(ym => {
         const e = fxByYm[c][ym]; const r2 = e.f > 0 ? e.w / e.f : null;
-        const prev3 = yms.slice(Math.max(0, i - 3), i).map(y2 => fxByYm[c][y2]);
-        const bf2 = sum(prev3.map(x => x.f)), bw2 = sum(prev3.map(x => x.w));
-        const b2 = bf2 > 0 && prev3.length === 3 ? bw2 / bf2 : null;
-        return { ym, f: e.f, w: e.w, r: r2, coImp: r2 != null && co ? e.f * (r2 - co) : null, b3: b2, m3: r2 != null && b2 != null ? e.f * (r2 - b2) : null };
+        const coImp = r2 != null && co ? e.f * (r2 - co) : null;   // = Σ외화×(환율 − 기준)
+        if (ym.slice(0, 4) === year && coImp != null) cumAcc += coImp;
+        return { ym, f: e.f, w: e.w, r: r2, coImp, cum: co ? cumAcc : null };
       }).reverse(); // 최근 달이 위
       return { c, fCur: o.f[ci], wCur: o.w[ci], rc, base, impact, co, coImpact, coYtd, yAvg, rate, monthly, fAll: sum(o.f) + o.yf };
     }).filter(x => x.fAll > 0).sort((a, b) => b.wCur - a.wCur || b.fAll - a.fAll);
@@ -615,14 +615,13 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
         <div className="ops-card wide">
           <h3><span className="no">7</span>환율 영향<HelpDot id="ops.fx" /></h3>
           {!db ? <Loading err={err} /> : !db.fxList.length ? <div className="ops-msg">기간 안에 외화 구매가 없거나, 구매 데이터에 통화(CURRNAME)·단가(PRICE)·환율(EXRATE) 열이 없습니다.</div> : <>
-            <p className="lead">{db.fxList.some(x => x.co) ? `${year}년 회사 기준 환율과 비교하면 ${curL} 외화 구매 원가를 ${kor(Math.abs(db.coImpact))} ${db.coImpact > 0 ? '더 부담해 손해' : db.coImpact < 0 ? '아껴 이익' : '차이 없이'}, 올해 누적으로는 ${kor(Math.abs(db.coYtd))} ${db.coYtd > 0 ? '손해' : '이익'}입니다.` : `${year}년 회사 기준 환율이 아직 없습니다. ${isAdmin ? '아래 "기준 환율 입력"에서 넣어 주세요.' : ''}`} {db.fxList.some(x => x.impact != null) ? `직전 3개월 평균 환율 대비로는 ${fxWord(db.fxImpact)}입니다.` : ''} 부담(빨강) = 기준보다 비싸게 사서 손해, 절감(초록) = 싸게 사서 이익. 통화 행을 누르면 월별 상세가 펼쳐집니다.</p>
+            <p className="lead">{db.fxList.some(x => x.co) ? `${year}년 회사 기준 환율과 비교하면 ${curL} 외화 구매 원가를 ${kor(Math.abs(db.coImpact))} ${db.coImpact > 0 ? '더 부담해 손해' : db.coImpact < 0 ? '아껴 이익' : '차이 없이'}, 올해 누적으로는 ${kor(Math.abs(db.coYtd))} ${db.coYtd > 0 ? '손해' : '이익'}입니다.` : `${year}년 회사 기준 환율이 아직 없습니다. ${isAdmin ? '아래 "기준 환율 입력"에서 넣어 주세요.' : ''}`} 부담(빨강) = 기준보다 비싸게 사서 손해, 절감(초록) = 싸게 사서 이익. 통화 행을 누르면 월별 상세가 펼쳐집니다.</p>
             <div className="ops-kpis">
               <Kpi l={`회사 기준 대비 (${curL})`} v={db.fxList.some(x => x.co) ? fxWord(db.coImpact) : '-'} tone={db.coImpact > 0 ? 'neg' : db.coImpact < 0 ? 'pos' : undefined} s={db.coImpact > 0 ? '기준보다 비싸게 삼 → 손해' : db.coImpact < 0 ? '기준보다 싸게 삼 → 이익' : undefined} />
               <Kpi l={`회사 기준 대비 (${year}년 누적)`} v={db.fxList.some(x => x.co) ? fxWord(db.coYtd) : '-'} tone={db.coYtd > 0 ? 'neg' : db.coYtd < 0 ? 'pos' : undefined} s={(db.coYtd > 0 ? '손해' : db.coYtd < 0 ? '이익' : '') + (db.ymsYear.length ? ` · ${ymL(db.ymsYear[0])} ~ ${curL}` : '')} />
-              <Kpi l="직전 3개월 평균 대비" v={fxWord(db.fxImpact)} tone={db.fxImpact > 0 ? 'neg' : db.fxImpact < 0 ? 'pos' : undefined} s={db.fxImpact > 0 ? '최근 흐름보다 비싸게 삼 → 손해' : db.fxImpact < 0 ? '최근 흐름보다 싸게 삼 → 이익' : undefined} />
             </div>
             <div className="tbl-wrap"><table>
-              <thead><tr><th>통화</th><th>{curL} 외화 구매</th><th>{curL} 평균 환율</th><th>회사 기준 ({year})</th><th>기준 대비 영향</th><th>{year} 평균 · 누적 영향</th><th>직전 3개월 평균</th><th>3개월 대비 영향</th><th style={{ width: 110 }}>월별 평균 환율</th></tr></thead>
+              <thead><tr><th>통화</th><th>{curL} 외화 구매</th><th>{curL} 평균 환율</th><th>회사 기준 ({year})</th><th>기준 대비 영향</th><th>{year} 평균 · 누적 영향</th><th style={{ width: 110 }}>월별 평균 환율</th></tr></thead>
               <tbody>{db.fxList.flatMap(x => {
                 const open = !!openFx[x.c];
                 const rows = [
@@ -631,22 +630,19 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
                     <td>{x.co ? fmt(x.co) : <span className="mut">미입력</span>}</td>
                     <td><FxAmt v={x.coImpact} /></td>
                     <td><span className="mut">{x.yAvg == null ? '-' : x.yAvg.toFixed(2)}</span>{x.coYtd != null ? <> · <FxAmt v={x.coYtd} f={kor} /></> : null}</td>
-                    <td className="mut">{x.base == null ? '-' : x.base.toFixed(2)}</td>
-                    <td><FxAmt v={x.impact} /></td>
                     <td><Line vals={x.rate} color="#0ea5e9" w={100} /></td>
                   </tr>,
                 ];
                 if (open) rows.push(
-                  <tr key={x.c + '|d'} className="l3"><td colSpan={9} style={{ padding: '8px 10px' }}>
+                  <tr key={x.c + '|d'} className="l3"><td colSpan={7} style={{ padding: '8px 10px' }}>
                     <div className="ops-mb-lg"><span>{x.c} 월별 상세 — 입고월 기준 · 올해는 1월부터, 지난해는 조회 기간만</span><span><i style={{ background: '#d93c3c' }} />부담 = 손해</span><span><i style={{ background: '#2c7f2c' }} />절감 = 이익</span></div>
                     <div className="tbl-wrap"><table>
-                      <thead><tr><th>월</th><th>외화 구매</th><th>원화 금액</th><th>평균 환율</th><th>회사 기준 {x.co ? `(${fmt(x.co)})` : ''} 대비</th><th>직전 3개월 평균</th><th>3개월 대비</th></tr></thead>
+                      <thead><tr><th>월</th><th>외화 구매</th><th>원화 금액</th><th>평균 환율</th><th>회사 기준 {x.co ? `(${fmt(x.co)})` : ''} 대비</th><th>올해 누적 (1월~그 달)</th></tr></thead>
                       <tbody>{x.monthly.map(m => (
                         <tr key={m.ym} className={m.ym === cur ? 'tot' : ''}>
                           <td>{ymL(m.ym)}</td><td>{fmt(m.f)}</td><td>{fmt(m.w)}</td><td>{m.r == null ? '-' : m.r.toFixed(2)}</td>
                           <td><FxAmt v={m.coImp} /></td>
-                          <td className="mut">{m.b3 == null ? '-' : m.b3.toFixed(2)}</td>
-                          <td><FxAmt v={m.m3} /></td>
+                          <td>{m.ym.slice(0, 4) === year ? <FxAmt v={m.cum} /> : <span className="mut">-</span>}</td>
                         </tr>
                       ))}</tbody>
                     </table></div>
