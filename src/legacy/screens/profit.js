@@ -205,6 +205,20 @@ export default function init() {
     _aggCache[ck] = { src: agg, out };
     return out;
   }
+  // ★ 실현 수익 화면용: (제) 계정(제조 노무비·경비)을 뺀 판관비만 — 제품 LOT 의 제조원가(ProcPrice)에 노무비·경비가 이미 들어 있어
+  //   한 번 더 빼면 중복이므로, 손익계산서 영업이익과 같은 구조(매출총이익 − 판관비)로 맞춤
+  const isJeAcc = acc => /\(제\)/.test(String(acc == null ? '' : acc));
+  function panOnly(agg) {
+    const deptMonth = {}, deptMonthAcc = {};
+    const src = (agg && agg.deptMonthAcc) || {};
+    for (const d in src) for (const m in src[d]) for (const a in src[d][m]) {
+      if (isJeAcc(a)) continue;
+      const v = src[d][m][a];
+      (deptMonthAcc[d] = deptMonthAcc[d] || {}); (deptMonthAcc[d][m] = deptMonthAcc[d][m] || {})[a] = v;
+      (deptMonth[d] = deptMonth[d] || {})[m] = (deptMonth[d][m] || 0) + v;
+    }
+    return { deptMonth, deptMonthAcc };
+  }
   function aggregate(screenTitle) {
     const title = screenTitle || '부서별 수익/비용';
     const db = aggregateFromDb(title);
@@ -215,7 +229,7 @@ export default function init() {
   // ★ 결산 매출 (전표 계정 '상품매출(결산)'·'제품매출(결산)') — 분기 마감 수정분개·IFRS 반품충당부채
   //   비용(판관·제조)이 아니므로 모든 비용 집계에서 제외하고, 국전 수익/비용(실현 수익) 화면의 수익에만 더함
   //   금액 = 대변 − 차변 (매출 계정)   → { byDept: {부서: {YYYYMM: 금액}}, byAcc: {계정: {YYYYMM: 금액}} }
-  const SETTLE_ACCS = ['상품매출(결산)', '제품매출(결산)'];
+  const SETTLE_ACCS = ['상품매출(결산)', '제품매출(결산)', '수수료매출(결산)'];
   const isSettleAcc = acc => SETTLE_ACCS.indexOf(String(acc == null ? '' : acc).replace(/\s+/g, '')) >= 0;
   function settleSales(screenTitle) {
     const rows = hub().rowsFor ? hub().rowsFor('voucher', screenTitle) : hub().data && hub().data.voucher;
@@ -1449,7 +1463,7 @@ export default function init() {
       const byBU = r.marginMonthlyByBU || {};
       const set = new Set();
       Object.values(byBU).forEach(o => Object.keys(o || {}).forEach(m => set.add(m)));
-      const agg = aggregate(TITLES[0]).deptMonth;
+      const agg = (REALIZED ? panOnly(aggregate(TITLES[0])) : aggregate(TITLES[0])).deptMonth;
       Object.values(agg).forEach(o => Object.keys(o || {}).forEach(m => set.add(m)));
       let all = Array.from(set).filter(m => m >= '202501').sort();
       const bm = $id('buBaseMonth') && $id('buBaseMonth').value;
@@ -1558,8 +1572,8 @@ export default function init() {
       const totalMarginSeries = months.map((m, i) => busAll.reduce((s, b) => s + buSeries[b][i], 0));
       const tMargin = totalMarginSeries.reduce((s, v) => s + v, 0);
 
-      // ── 비용 ──
-      const agg = aggregate(TITLES[0]);
+      // ── 비용 ──  (실현 수익 화면 = 판관비만, (제) 제외)
+      const agg = REALIZED ? panOnly(aggregate(TITLES[0])) : aggregate(TITLES[0]);
       const dm = agg.deptMonth;
       const deptList = Object.keys(dm).filter(deptAllowed);
       // 비용 = 전표 비용 + 지원 비용(지원 받은 금액)
@@ -1712,6 +1726,7 @@ export default function init() {
       $id('buDivDonut').innerHTML = divSlices.length && divTotal > 0 ? donutLeaderSVG(divSlices, divTotal, mLabel(cur)) : '<p class="text-xs text-slate-400 py-6 text-center">기준월 비용 데이터가 없습니다.</p>';
       // 도넛 아래: 단위별 주요 계정 TOP3 + 적요 키워드
       const items1mo = collectAccItems(new Set(deptList), [cur], TITLES[0]); // dept → acc → desc → amt
+      if (REALIZED) for (const d in items1mo) for (const a in items1mo[d]) if (isJeAcc(a)) delete items1mo[d][a];   // 판관비만
       $id('buDivDetail').innerHTML = divUnits.map(u => {
         // 단위 소속 부서들의 계정별 적요 병합 (부서 단위면 자기 자신)
         const accDescs = {};

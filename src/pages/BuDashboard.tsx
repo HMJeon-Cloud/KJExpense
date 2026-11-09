@@ -164,7 +164,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
       `}</style>
 
       <div className="ttl">
-        <div><h1>{title}</h1>{d && <div className="sub">{d.period} 기준. 수익은 {model!.realized ? '판매 실현 수익 + 결산 매출(상품·제품매출(결산))' : '구매/판매 이윤을 부서 배분 비율로 나눈 값'}, 비용은 전표 합계입니다.</div>}</div>
+        <div><h1>{title}</h1>{d && <div className="sub">{d.period} 기준. 수익은 {model!.realized ? '판매 실현 수익 + 결산 매출(상품·제품·수수료매출(결산))' : '구매/판매 이윤을 부서 배분 비율로 나눈 값'}, 비용은 {model!.realized ? '판관비 전표 합계(제조 노무비·경비는 제품 원가에 이미 포함돼 제외)' : '전표 합계'}입니다.</div>}</div>
         <span className="sp" />
         <span className="monthnav" title="기준월">
           <button onClick={() => setBase(shiftMonth(ctl.baseMonth, -1))} disabled={!hasPrev} aria-label="이전 달">‹</button>
@@ -299,7 +299,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     const hqs = Object.keys(st.byHq).filter(h => st.byHq[h].some(v => v !== 0));
                     return (
                       <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
-                        <div className="help" style={{ marginBottom: 6 }}>위 사업장 수익에 포함된 결산 매출 (전표 상품매출(결산)·제품매출(결산) — 분기 마감 수정분개·IFRS 반품충당부채)</div>
+                        <div className="help" style={{ marginBottom: 6 }}>위 사업장 수익에 포함된 결산 매출 (전표 상품·제품·수수료매출(결산) — 분기 마감 수정분개·IFRS 반품충당부채)</div>
                         <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장 · 계정</span><span>{ymL(model.cur)} · {model.months.length}개월 합계</span></div>
                         {hqs.map(h => (
                           <div key={h} className="row" style={{ justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{h}</span><span className="row" style={{ gap: 10 }}><span className="num" style={{ color: st.byHq[h][ci] < 0 ? 'var(--neg)' : undefined }}>{fmt(st.byHq[h][ci])}</span><span className="num help">{fmt(st.byHq[h].reduce((a, b) => a + b, 0))}</span></span></div>
