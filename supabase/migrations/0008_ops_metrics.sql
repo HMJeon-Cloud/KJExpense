@@ -15,11 +15,38 @@
 create or replace function public.kj_ymd(p text) returns text
 language sql immutable as $$ select substr(regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g'), 1, 8) $$;
 
+-- ★ 회계 기준 보기용: 음성공장 제조비용 (전표 계정 '원재료타계정이입액(소재)_잡손실(노무비/경비)')
+--   회계는 소재사업본부의 제조 노무비·경비를 원가계산 전에 이 계정으로 빼서(음수) 제품 재고에 얹고(손익계산서 '타계정에서제품대체액'),
+--   그 제품이 팔릴 때 매출원가로 처리합니다. 월별품목별제조원가(ProcPrice)에는 들어 있지 않으므로 여기서 같은 방식으로 얹습니다.
+--   acct_oh_pool()  : 월별 금액 (대변 − 차변 = 양수)
+--   acct_lot_oh()   : 그 달 생산입고된 소재 제품 LOT(품번 M…, 자산순번 36·37 제외)에 제조원가 금액 비율로 나눈 단위당 금액
+create or replace function public.acct_oh_pool() returns table (ym text, amt numeric)
+language sql stable security definer set search_path = public as $$
+  select substr(public.kj_ymd(public.kj_v(d, 'ACCDATE', '회계일')), 1, 6) as ym,
+         sum(public.kj_num(public.kj_v(d, 'CRAMT', '대변금액')) - public.kj_num(public.kj_v(d, 'DRAMT', '차변금액'))) as amt
+  from (select public.kj_norm(data) as d from public.rows where dataset = 'voucher' and data::text like '%잡손실%') v
+  where replace(coalesce(public.kj_v(d, 'ACCNAME', '계정과목'), ''), ' ', '') like '원재료타계정이입액%잡손실%'
+  group by 1
+$$;
+create or replace function public.acct_lot_oh() returns table (lot_key text, ym text, oh_unit numeric)
+language sql stable security definer set search_path = public as $$
+  with pool as (select ym, amt from public.acct_oh_pool() where length(ym) = 6 and amt <> 0),
+  c as (
+    select lot_key, substr(public.kj_ymd(p_date), 1, 6) as ym, (p_qty - in_qty - ret_qty) as bq, margin_unit * (p_qty - in_qty - ret_qty) as val
+    from public.trade_lot_summary()
+    where imp_kind = '생산입고' and upper(item_no) like 'M%' and asset_seq not in ('36', '37') and (p_qty - in_qty - ret_qty) > 0 and margin_unit > 0
+  ),
+  b as (select ym, sum(val) as tv from c group by ym)
+  select c.lot_key, c.ym, pool.amt * c.val / b.tv / c.bq as oh_unit
+  from c join b on b.ym = c.ym join pool on pool.ym = c.ym where b.tv > 0
+$$;
+
 create or replace function public.ops_metrics_q(p_from text, p_to text)
 returns jsonb language sql stable security definer set search_path = public set jit = off as $$
 with
 la as materialized (select * from public.trade_lot_summary()),   -- 한 번만 계산
 l as materialized (select * from la where asset_seq not in ('36', '37')),
+loh as materialized (select lot_key, oh_unit from public.acct_lot_oh()),
 -- ① 재고 (지금 시점) — ERP 재고(LOT별 재고 업로드)가 있으면 그것이 기준, 없으면 계산값
 st0 as materialized (
   select public.kj_norm(data) as d from public.rows where dataset = 'stock'
@@ -80,8 +107,8 @@ gap as materialized (
 -- ② 판매 (청구처·품목별 매출과 원가)
 sl as (
   select l.dept, e ->> 'm' as ym, l.item_name || ' (' || l.item_no || ')' as item, coalesce(nullif(e ->> 'cu', ''), '미지정 청구처') as cust,
-    (e ->> 'a')::numeric as amt, (e ->> 'q')::numeric * l.margin_unit as cogs
-  from l, jsonb_array_elements(l.sales) e
+    (e ->> 'a')::numeric as amt, (e ->> 'q')::numeric * (l.margin_unit + coalesce(oh.oh_unit, 0)) as cogs   -- 소재 제품은 음성공장 제조비용 포함 (회계 기준)
+  from l left join loh oh on oh.lot_key = l.lot_key, jsonb_array_elements(l.sales) e
   where (e ->> 'm') between p_from and p_to
 ),
 sales as (select dept, ym, item, cust, sum(amt) as amt, sum(cogs) as cogs from sl group by 1, 2, 3, 4),
@@ -153,10 +180,10 @@ create or replace function public.ops_metrics(p_from text, p_to text)
 returns jsonb language plpgsql volatile security definer set search_path = public set jit = off as $$
 declare v text; k text := 'ops|' || p_from || '|' || p_to; r jsonb;
 begin
-  v := public.ensure_lot_cache() || '|' || current_date;   -- 재고 경과일이 날마다 바뀌므로 날짜도
+  v := public.ensure_lot_cache() || '|' || current_date || '|' || coalesce((select count(*) || ':' || max(id) from public.rows where dataset = 'voucher'), '');   -- 전표(음성공장 제조비용)가 바뀌어도 다시 계산   -- 재고 경과일이 날마다 바뀌므로 날짜도
   r := public.kj_cached(k, v);
   if r is null then r := public.ops_metrics_q(p_from, p_to); perform public.kj_cache_put(k, v, r); end if;
   return r;
 end $$;
-grant execute on function public.kj_ymd(text), public.ops_metrics(text, text), public.ops_metrics_q(text, text) to authenticated;
+grant execute on function public.kj_ymd(text), public.ops_metrics(text, text), public.ops_metrics_q(text, text), public.acct_oh_pool(), public.acct_lot_oh() to authenticated;
 notify pgrst, 'reload config';

@@ -30,6 +30,7 @@ export const SCREENS: { group: string; items: { path: string; title: string; adm
     { path: '/settings/support', title: '지원 내역 설정', admin: true },
     { path: '/settings/cost-alloc', title: '비용 배분 설정(본부)', admin: true },
     { path: '/settings/fixed', title: '고정비 설정', admin: true },
+    { path: '/settings/pl', title: '손익계산서 올리기', admin: true },
     { path: '/settings/employees', title: '사원 관리', admin: true },
     { path: '/settings/upload', title: '데이터 업로드', admin: true },
     { path: '/settings/history', title: '변경 이력 · 복구', admin: true },

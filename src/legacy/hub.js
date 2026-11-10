@@ -507,6 +507,8 @@ export async function loadResults(why) {
       const m = b.data || {};
       KJHub.results = Object.assign({}, KJHub.results, { profitMonthlyByGroup: a.data || {}, marginMonthlyByBU: m.byBU || {}, marginMonthlyByDept: m.byDept || {}, marginMonthlyFull: m.full || {} });
       KJHub.resultsFromDb = true;
+      // 회계 기준 보기 (0011 SQL) — 없으면 건너뜀 (실현 수익 화면에 안내)
+      try { const c = await call('acct_view'); KJHub.results.acct = c.error ? null : (c.data || null); if (c.error) console.warn('[KJHub] 회계 기준 집계 없음(0011 SQL 미실행?):', c.error.message); } catch (e2) { KJHub.results.acct = null; }
       console.log('[KJHub] 수익 집계 DB 수신 (' + (why || '') + ') ' + Math.round(performance.now() - t0) + 'ms · LOT ' + (m.lots || '?'));
       try { window.dispatchEvent(new CustomEvent('kjhub:results')); } catch (e) {}
     } catch (e) {

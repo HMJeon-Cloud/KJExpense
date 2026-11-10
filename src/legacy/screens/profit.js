@@ -1551,6 +1551,13 @@ export default function init() {
       // ── (참고) 전사 실현 수익 — 화면 표시에는 쓰지 않고 데이터 유무 판단에만 사용 ──
       const buSeries = {};
       busAll.forEach(b => { buSeries[b] = months.map(m => (byBU[b] || {})[m] || 0); });
+      // ★ 회계 기준(실현 수익 화면·운영 지표만): 음성공장 제조비용 중 그 달 판매된 소재 제품 몫을 원가에 더함 (= 수익에서 뺌)
+      const ACCT = REALIZED ? ((hub().results || {}).acct || null) : null;
+      const OH = (ACCT && ACCT.oh) || { byBU: {}, byDept: {}, full: {}, pool: {}, unalloc: {} };
+      if (REALIZED) Object.keys(OH.byBU || {}).forEach(b => {
+        if (!buSeries[b]) { if (!months.some(m => OH.byBU[b][m])) return; buSeries[b] = months.map(() => 0); busAll.push(b); }
+        months.forEach((m, i) => { buSeries[b][i] -= OH.byBU[b][m] || 0; });
+      });
       // 구매/판매 실현 수익만 (운영 지표용 — 결산 매출 제외)
       const tradeMarginSeries = months.map((m, i) => busAll.reduce((s, b) => s + buSeries[b][i], 0));
       // ★ 실현 수익 화면: 결산 매출(상품·제품매출(결산))을 그 전표 부서의 사업장(본부) 수익에 더함
@@ -1597,6 +1604,7 @@ export default function init() {
       // 실현 수익 화면의 부서별 수익 = 구매/판매 실현 수익 + 결산 매출
       const mByDept = Object.assign({}, r0.marginMonthlyByDept || {});
       Object.keys(settleByDeptSer).forEach(d => { const o = Object.assign({}, mByDept[d] || {}); months.forEach((m, i) => { o[m] = (o[m] || 0) + settleByDeptSer[d][i]; }); mByDept[d] = o; });
+      if (REALIZED) Object.keys(OH.byDept || {}).forEach(d => { const o = Object.assign({}, mByDept[d] || {}); months.forEach(m => { const v = OH.byDept[d][m] || 0; if (v) o[m] = (o[m] || 0) - v; }); mByDept[d] = o; });
       const amap = deptAllocMap(months);
       const hqAllocSeries = Object.create(null); // hq → [월별 배분 수익]
       const hqAllocCnt = Object.create(null);
@@ -1833,6 +1841,33 @@ export default function init() {
       const hcUnitLbl = DEPT_LEVEL ? '부서' : '본부';
       $id('buHcMonth').innerText = mLabel(cur);
       $id('buHeadcount').innerHTML = hcRows.length ? '<table class="w-full text-sm"><thead><tr class="text-slate-400 text-[11px] border-b border-slate-200"><th class="py-1.5 px-3 text-left font-semibold">' + hcUnitLbl + '</th><th class="py-1.5 px-3 text-right font-semibold">인원</th><th class="py-1.5 px-3 text-right font-semibold">비용</th><th class="py-1.5 px-3 text-right font-semibold">인당 비용</th></tr></thead><tbody>' + hcRows.map(x => '<tr class="border-b border-slate-100 cursor-pointer hover:bg-indigo-50/40 bu-hc-row" data-hq="' + x.hq + '" title="더블클릭: 부서별 수익/비용에서 ' + x.hq + ' 조회"><td class="py-2 px-3 font-semibold text-slate-700">' + x.hq + '</td><td class="py-2 px-3 text-right text-slate-700" style="font-variant-numeric:tabular-nums">' + (x.emp || '-') + (x.emp ? '명' : '') + '</td><td class="py-2 px-3 text-right font-semibold text-slate-800" style="font-variant-numeric:tabular-nums">' + fmtWon(x.cost) + '</td><td class="py-2 px-3 text-right text-slate-700" style="font-variant-numeric:tabular-nums">' + (x.per != null ? fmtWon(x.per) : '-') + '</td></tr>').join('') + '</tbody></table>' : '<p class="text-xs text-slate-400">기준월 인원 데이터가 없습니다. (부서별 월별 인원 시트 연동 필요)</p>';
+      // ── ★ 회계 기준 손익 요약 (회사 전체 · 2025년 1월부터 모든 달) — 전체 권한 사용자만 ──
+      //   매출액 = 판매 데이터 + 결산 매출 · 매출원가 = 판매분 LOT 원가 + 음성공장 제조비용(판매분) · 판관비 = 전표 (제)·결산 제외
+      let acctModel = null;
+      if (REALIZED && !DEPT_LEVEL && buDepts() == null) {
+        const full = r0.marginMonthlyFull || {};
+        const aggAll = panOnly(aggregate(TITLES[0]));
+        const sgaBy = {};
+        for (const d in aggAll.deptMonthAcc) for (const m in aggAll.deptMonthAcc[d]) for (const a in aggAll.deptMonthAcc[d][m]) {
+          if (/타계정/.test(a)) continue;   // 원가 대체 계정은 판관비가 아님
+          sgaBy[m] = (sgaBy[m] || 0) + aggAll.deptMonthAcc[d][m][a];
+        }
+        const set = {}; Object.keys(SET.byAcc).forEach(a => { for (const m in SET.byAcc[a]) set[m] = (set[m] || 0) + SET.byAcc[a][m]; });
+        const A = ACCT || {};
+        const ymSet = {}; [A.sales, full, sgaBy].forEach(o => Object.keys(o || {}).forEach(m => { if (/^\d{6}$/.test(m) && m >= '202401') ymSet[m] = 1; }));
+        const yms = Object.keys(ymSet).sort();
+        const rowsA = {};
+        yms.forEach(m => {
+          const stl = (A.settle && A.settle[m] != null) ? A.settle[m] : (set[m] || 0);
+          const oh = ((OH.full || {})[m] || 0) + ((OH.unalloc || {})[m] || 0);
+          const tm = Number(typeof full[m] === 'object' && full[m] ? (full[m].margin != null ? full[m].margin : 0) : full[m]) || 0;
+          const tradeSales = A.sales ? (A.sales[m] || 0) : null;
+          const gp = tm + stl - oh;
+          rowsA[m] = { sales: tradeSales == null ? null : tradeSales + stl, gp, sga: sgaBy[m] || 0, op: gp - (sgaBy[m] || 0), oh, pool: (OH.pool || {})[m] || 0, disp: ((A.disp || {}).full || {})[m] || 0, settle: stl };
+        });
+        acctModel = { hasDb: !!ACCT, months: yms, rows: rowsA };
+      }
+
       // ── ★ 새 화면(React)용 모델 내보내기 — 계산 결과를 그대로 전달 ──
       try {
         const zeros = () => months.map(() => 0);
@@ -1841,6 +1876,7 @@ export default function init() {
           allow: buDepts(),
           kpi: { tMargin: dispTMargin, curMargin, prevMargin, tCost, curCost, prevCost, usage, allocTotal },
           // marginTrade: 구매/판매 실현 수익만 (운영 지표용) · settle: 결산 매출 (실현 수익 화면 수익에 포함된 금액)
+          acct: acctModel,
           settle: REALIZED ? { series: settleSeries, byHq: settleByHqSer, byDept: settleByDeptSer, byAcc: Object.fromEntries(Object.keys(SET.byAcc).map(a => [a, months.map(m => SET.byAcc[a][m] || 0)])) } : null,
           series: { margin: dispMarginSeries, marginTrade: REALIZED ? tradeMarginSeries : dispMarginSeries, cost: totalCostSeries, supAlloc: REALIZED ? zeros() : supAllocSeriesBU, supCost: REALIZED ? zeros() : supCostSeriesBU },
           hqCards: hqShowMargin.map(hq => { const s2 = hqAllocSeries[hq] || zeros(); const sum = s2.reduce((x, y) => x + y, 0); return { hq, series: s2, sum, cur: s2[s2.length - 1] || 0, prev: s2.length > 1 ? s2[s2.length - 2] : 0, share: DEPT_LEVEL ? null : pct(sum, allocTotal) }; }),

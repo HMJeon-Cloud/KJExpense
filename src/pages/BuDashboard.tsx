@@ -10,6 +10,7 @@ import { HELP } from '../lib/helpDocs';
 import { ListHead } from '../components/ListHead';
 import { type OpsDeptRow } from '../components/OpsMetrics';
 import { applyHqAlloc, useCostAlloc } from '../lib/hqAlloc';
+import AcctSummary, { type AcctModel } from '../components/AcctSummary';
 import { useAuth } from '../lib/auth';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL, C } from '../components/charts';
 
@@ -24,6 +25,7 @@ type Model = {
   alerts: { ups: { d: string; a: string; v: number; hq: string }[]; downs: { d: string; a: string; v: number; hq: string }[] };
   headcount: { hq: string; emp: number; cost: number; per: number | null; depts: string[] }[];
   hqOrder: string[];
+  acct?: AcctModel | null;
   settle?: { series: number[]; byHq: Record<string, number[]>; byDept: Record<string, number[]>; byAcc: Record<string, number[]> } | null;
   deptRows: OpsDeptRow[]; allow?: string[] | null; fixedRule?: string;
   revenue: { byGroup: { key: string; label: string; series: number[]; cur: number; prev: number; sum: number }[]; byBU: { bu: string; series: number[]; cur: number; prev: number; sum: number }[]; byDept: { d: string; hq: string; cur: number; prev: number; sum: number; groups: string[]; support: number }[]; supportCur: number };
@@ -180,6 +182,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
         <div className="card"><div className="empty">{model.reason === 'results' ? '구매/판매 데이터의 수익 계산이 아직 끝나지 않았거나 데이터가 없습니다. 잠시 뒤 자동으로 표시됩니다.' : '선택한 기간에 표시할 데이터가 없습니다. 기준월을 확인하세요.'}</div></div>
       ) : (
         <>
+          {model.realized && model.acct && model.acct.rows[model.cur] && <AcctSummary acct={model.acct} cur={model.cur} isAdmin={isAdmin} />}
           {/* 1. 결론 */}
           <section className="verdict">
             <div className="big" style={{ borderTop: `4px solid ${d.net >= 0 ? '#3aa63a' : '#d93c3c'}` }}>
