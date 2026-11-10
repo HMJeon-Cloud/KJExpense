@@ -76,7 +76,7 @@ export default function init() {
         inDate: String(pick(r, ['DelvInDate', '입고일자', '입고일']) || ''),
         inPrice: inp,
         sell: sell,
-        profit: Math.round((sell - inp) * qty),
+        profit: sell ? Math.round((sell - inp) * qty) : 0,
         dept: String(pick(r, ['DeptName', '부서명']) || '')
       };
     });

@@ -288,7 +288,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     );
                   })}
                   {model.revenue.byBU.length > 0 && (
-                    <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                    <div style={model.revenue.byGroup.length ? { marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' } : undefined}>
                       <div className="help" style={{ marginBottom: 6 }}>사업장별 {model.realized ? '실현 수익' : '실현 수익 (참고)'}</div>
                       <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장</span><span>{ymL(model.cur)} 실현 수익 · 전월비</span></div>
                       {model.revenue.byBU.slice().sort((a, b) => b.cur - a.cur).map(b => (
@@ -337,7 +337,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 5. 비용 구성 */}
           <section className="sec">
             <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 비용은 어디서 나갔나<HelpDot id={hid('cost')} /></h2><button className="btn sm ghost" onClick={() => setShowCost(s => !s)}>{showCost ? '접기' : '펼치기'}</button></div>
-            <p className="lead">왼쪽은 {model.deptLevel ? '부서' : '본부'}별 구성과 주요 계정, 오른쪽은 비용이 큰 부서 10곳입니다. 항목을 클릭하면 전표를 봅니다.</p>
+            <p className="lead">왼쪽은 {model.deptLevel ? '부서' : '본부'}별 구성과 주요 계정, 오른쪽은 비용이 큰 부서 10곳입니다. 항목을 클릭하면 전표를 봅니다.{(() => { const tv = sum(model.donut.map(x => x.v)); const gap = model.kpi.curCost - tv; return !model.realized && Math.abs(gap) >= 1 && tv > 0 ? <> 여기 금액은 전표 비용만이며, 위 결론·본부별 현황의 비용({fmt(model.kpi.curCost)})은 지원 내역 부담액 {fmt(gap)}을 더한 금액입니다.</> : null; })()}</p>
             {showCost && (
               <div className="costgrid">
                 <div>

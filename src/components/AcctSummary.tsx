@@ -114,7 +114,7 @@ export default function AcctSummary({ acct, cur, isAdmin }: { acct: AcctModel; c
         .acs .top .l{font-size:12px;color:var(--fg-3)}.acs .top .v{font:700 22px var(--font-num);letter-spacing:-.01em}.acs .top .s{font-size:12px;color:var(--fg-2);margin-top:2px}
         .acs table{width:100%;border-collapse:collapse;font-size:13px}
         .acs th{font-weight:500;color:var(--fg-3);font-size:11.5px;text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2)}
-        .acs th:first-child,.acs td:first-child{text-align:left}
+        .acs th:first-child,.acs td:first-child{text-align:left;position:sticky;left:0;z-index:1}.acs td:first-child{background:var(--surface)}.acs tr.st td:first-child{background:#fafbfd}
         .acs td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;white-space:nowrap}
         .acs td:first-child{font-family:var(--font-body)}
         .acs tr.st td{font-weight:700;background:#fafbfd}.acs tr.rt td{font-size:12px;color:var(--fg-2);border-bottom-color:var(--line)}.acs tr.rt td:first-child{padding-left:22px}

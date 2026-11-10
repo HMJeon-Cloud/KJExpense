@@ -38,7 +38,7 @@ export function HelpHost() {
   return (
     <>
       <style>{`
-        .helpdot{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);color:var(--fg-3);font:700 11px/1 var(--font-num);cursor:pointer;padding:0;margin-left:6px;vertical-align:middle;flex:none;transition:all .12s}
+        .helpdot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;border:1px solid color-mix(in srgb,var(--brand) 45%,var(--line-2));background:var(--brand-soft);color:var(--brand);font:700 11px/1 var(--font-num);cursor:pointer;padding:0;margin-left:6px;vertical-align:middle;flex:none;transition:all .12s}
         .helpdot:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
         .hlp-ov{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.38);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
         .hlp{width:100%;max-width:680px;background:var(--surface);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);overflow:hidden}

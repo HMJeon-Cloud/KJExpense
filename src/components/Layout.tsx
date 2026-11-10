@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import LegacyHost, { DataStatus } from '../legacy/LegacyHost';
 import { HelpHost } from './Help';
 import { InstallButton } from './Install';
+import { ColTips } from './ColTips';
 
 // 화면 레지스트리 — 3단계에서 기존 화면을 옮기며 채웁니다.
 export const SCREENS: { group: string; items: { path: string; title: string; admin?: boolean; privileged?: boolean }[] }[] = [
@@ -22,6 +23,9 @@ export const SCREENS: { group: string; items: { path: string; title: string; adm
     { path: '/trade', title: '구매/판매' },
     { path: '/matinput', title: '실자재투입 내역' },
     { path: '/stock', title: 'Lot별 재고조회' },
+  ]},
+  { group: '도움말', items: [
+    { path: '/guide', title: '계산 기준 안내' },
   ]},
   { group: '설정', items: [
     { path: '/settings/alloc', title: '배분 비율 설정(부서)', admin: true },
@@ -104,7 +108,13 @@ export default function Layout() {
       )}
       <LegacyHost />
       <Outlet />
+      {!loc.pathname.startsWith('/settings') && loc.pathname !== '/guide' && (
+        <footer className="pagefoot">
+          금액 단위는 원입니다 (큰 글씨의 억·만 표기는 반올림). ERP 에서 올린 기초 데이터와 설정으로 계산하며 마감월은 {ymLabel(closeMonth)} 입니다. 표·그래프 제목 옆 (?) 와 점선 밑줄 친 열 이름에서 계산 방법을 볼 수 있습니다. <NavLink to="/guide">계산 기준 안내 →</NavLink>
+        </footer>
+      )}
       <HelpHost />
+      <ColTips />
     </>
   );
 }

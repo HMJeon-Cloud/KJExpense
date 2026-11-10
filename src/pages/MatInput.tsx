@@ -48,7 +48,7 @@ export default function MatInput() {
       const inp = num(pick(r, ['InPrice', '입고단가'], true)); const qty = num(pick(r, ['Qty', '투입수량'], true));
       return { goodNo: String(pick(r, ['GoodItemNo', '생산품번'], true) || ''), goodNm: String(pick(r, ['GoodItemName', '제품명'], true) || ''), goodLot: String(pick(r, ['RRealLotNo', '생산LotNo'], true) || ''),
         matNo: String(pick(r, ['MatItemNo', '자재코드'], true) || ''), matNm: String(pick(r, ['MatItemName', '자재명'], true) || ''), asset: String(pick(r, ['AssetName', '자산분류'], true) || ''), matLot: String(pick(r, ['RealLotNo', '자재LotNo'], true) || ''),
-        qty, inDate: String(pick(r, ['DelvInDate', '입고일자', '입고일'], true) || ''), inPrice: inp, sell, profit: Math.round((sell - inp) * qty), dept: String(pick(r, ['DeptName', '부서명'], true) || '') };
+        qty, inDate: String(pick(r, ['DelvInDate', '입고일자', '입고일'], true) || ''), inPrice: inp, sell, profit: sell ? Math.round((sell - inp) * qty) : 0 /* 판매가 미설정 = 계산하지 않음 (배분 수익 계산과 같은 규칙) */, dept: String(pick(r, ['DeptName', '부서명'], true) || '') };
     });
   }, [all, itemNo, lotQ, ctx?.ym, tick]); // eslint-disable-line
 
@@ -111,7 +111,7 @@ export default function MatInput() {
                 <div className="l">자재 수익 합계<HelpDot id="mat.verdict" /> <span>(판매가(구매) − 입고금액) × 수량</span></div>
                 <div className="big" style={{ color: total >= 0 ? '#2c7f2c' : '#b32b2b' }}>{kor(total)}</div>
                 <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · 자재 {byMat.length}종 · 투입 {fmt(rows.length)}건</div>
-                {unsetCnt > 0 && <div className="help" style={{ marginTop: 8, color: '#9a6f00' }}>판매가(구매)가 설정되지 않은 투입 {unsetCnt}건은 수익 0으로 계산됩니다 → 배분 비율 설정(원자재)에서 기준월 값을 저장하세요.</div>}
+                {unsetCnt > 0 && <div className="help" style={{ marginTop: 8, color: '#9a6f00' }}>판매가(구매)가 설정되지 않은 투입 {unsetCnt}건은 수익을 계산하지 않습니다(0) → 배분 비율 설정(원자재)에서 기준월 값을 저장하세요.</div>}
               </div>
               <div>
                 <div className="l">부서별 수익<HelpDot id="mat.verdict" /></div>
@@ -134,7 +134,7 @@ export default function MatInput() {
               <div className="hd">투입 상세<HelpDot id="mat.table" /> {matSel && <span className="chip on" style={{ marginLeft: 8 }}>{matSel} <span className="x" onClick={() => setMatSel('')}>×</span></span>}<span className="sp" /><span className="help">{fmt(shown.length)}건 · 열 제목을 누르면 정렬</span></div>
               <div className="tbl-wrap"><table>
                 <thead><tr>{COLS.map(c => <th key={c.key} className={c.num ? 'n' : ''} style={{ width: c.w }} onClick={() => setSort(s => ({ k: c.key, d: s.k === c.key ? (s.d === 1 ? -1 : 1) : (c.num ? -1 : 1) }))}>{c.label}{sort.k === c.key ? (sort.d === 1 ? ' ▲' : ' ▼') : ''}</th>)}</tr></thead>
-                <tbody>{shown.map((r, i) => <tr key={i}>{COLS.map(c => { const v = r[c.key]; const cls = (c.num ? 'n ' : '') + (c.wide ? 'wide ' : '') + (c.key === 'profit' ? (r.profit < 0 ? 'neg' : 'pos') : c.key === 'sell' && !r.sell ? 'unset' : ''); return <td key={c.key} className={cls} title={c.wide ? String(v) : undefined}>{c.date ? fmtD(v) : c.num ? fmt(v as number) : (String(v) || '-')}</td>; })}</tr>)}</tbody>
+                <tbody>{shown.map((r, i) => <tr key={i}>{COLS.map(c => { const v = r[c.key]; const cls = (c.num ? 'n ' : '') + (c.wide ? 'wide ' : '') + (c.key === 'profit' ? (!r.sell ? 'unset' : r.profit < 0 ? 'neg' : 'pos') : c.key === 'sell' && !r.sell ? 'unset' : ''); return <td key={c.key} className={cls} title={c.wide ? String(v) : undefined}>{c.key === 'sell' && !r.sell ? '미설정' : c.key === 'profit' && !r.sell ? '-' : c.date ? fmtD(v) : c.num ? fmt(v as number) : (String(v) || '-')}</td>; })}</tr>)}</tbody>
               </table></div>
             </div>
           </>

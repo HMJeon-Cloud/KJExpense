@@ -165,6 +165,8 @@ export function NetTrend({ months, margin, cost, height = 240 }: { months: strin
 }
 function niceStep(raw: number) { const p = Math.pow(10, Math.floor(Math.log10(Math.max(1, raw)))); const r = raw / p; return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * p; }
 
+/** 비율 표시 — 999% 를 넘으면 줄여서 (수익이 아주 작을 때 10만% 같은 숫자가 나오는 것 방지) */
+export const pctCap = (r: number | null | undefined) => (r == null ? '-' : r > 999 ? '999%+' : r + '%');
 /** 비용/수익 비율 막대 (100% 기준선) */
 export function RatioBar({ ratio }: { ratio: number | null }) {
   if (ratio == null) return <span className="help">-</span>;
@@ -176,7 +178,7 @@ export function RatioBar({ ratio }: { ratio: number | null }) {
         <div style={{ width: w + '%', height: '100%', background: over ? '#d93c3c' : ratio > 85 ? '#f5b400' : '#3aa63a', borderRadius: 999 }} />
         <div style={{ position: 'absolute', left: (100 / 1.5) + '%', top: -3, width: 1, height: 14, background: 'var(--fg-3)' }} />
       </div>
-      <span className="num" style={{ width: 46, fontSize: 12.5, color: over ? 'var(--neg)' : undefined }}>{ratio}%</span>
+      <span className="num" title={ratio > 999 ? '비용 ÷ 수익 = ' + ratio.toLocaleString('ko-KR') + '% (수익이 매우 작음)' : undefined} style={{ width: 50, fontSize: 12.5, color: over ? 'var(--neg)' : undefined }}>{pctCap(ratio)}</span>
     </div>
   );
 }

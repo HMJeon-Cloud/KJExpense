@@ -1,6 +1,7 @@
 import Ops from './pages/Ops';
 import CostAllocSettings from './pages/CostAllocSettings';
 import PlSettings from './pages/PlSettings';
+import Guide from './pages/Guide';
 import FixedCostSettings from './pages/FixedCostSettings';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -63,6 +64,7 @@ function Gate() {
         <Route path="/settings/support" element={<SupportSettings />} />
         <Route path="/settings/fixed" element={isAdmin ? <FixedCostSettings /> : <Navigate to="/" />} />
         <Route path="/settings/cost-alloc" element={isAdmin ? <CostAllocSettings /> : <Navigate to="/" />} />
+        <Route path="/guide" element={<Guide />} />
         <Route path="/settings/pl" element={isAdmin ? <PlSettings /> : <Navigate to="/" />} />
         <Route path="*" element={<LegacyOrPlaceholder isAdmin={isAdmin} />} />
       </Route>

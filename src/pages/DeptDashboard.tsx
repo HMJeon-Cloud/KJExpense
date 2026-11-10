@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fmt } from '../components/ui';
 import { HelpDot } from '../components/Help';
-import { NetTrend, Spark, Donut, RatioBar, kor, ymL } from '../components/charts';
+import { NetTrend, Spark, Donut, RatioBar, kor, ymL, pctCap } from '../components/charts';
 import VoucherTable from '../components/VoucherTable';
 
 type Dept = { d: string; hq: string; groups: { key: string; label: string; pct: number }[]; margin: number[]; supAlloc: number[]; supCost: number[]; voucher: number[]; cost: number[]; emp: number[]; empNow: number; slices: { a: string; v: number; kws: string[] }[]; alerts: { a: string; v: number; up: boolean }[] };
@@ -141,7 +141,7 @@ export default function DeptDashboard() {
             <div>
               <div className="l">{ymL(model.cur)} 순수익 (수익 − 비용){hq ? ` · ${hq}` : ''}<HelpDot id="dept.verdict" /></div>
               <div className="big" style={{ color: totals.m - totals.c >= 0 ? '#2c7f2c' : '#b32b2b' }}>{(totals.m - totals.c >= 0 ? '+' : '−') + kor(Math.abs(totals.m - totals.c))}</div>
-              <div className="help" style={{ marginTop: 4 }}>{totals.m - totals.c >= 0 ? `수익 안에서 비용을 썼습니다. 비용은 수익의 ${ratio(totals.c, totals.m) ?? '-'}%.` : `비용이 수익보다 ${kor(totals.c - totals.m)} 많습니다. 비용은 수익의 ${ratio(totals.c, totals.m) ?? '-'}%.`}</div>
+              <div className="help" style={{ marginTop: 4 }}>{totals.m - totals.c >= 0 ? `수익 안에서 비용을 썼습니다. 비용은 수익의 ${pctCap(ratio(totals.c, totals.m))}.` : `비용이 수익보다 ${kor(totals.c - totals.m)} 많습니다. 비용은 수익의 ${pctCap(ratio(totals.c, totals.m))}.`}</div>
               <div style={{ marginTop: 10 }}><RatioBar ratio={ratio(totals.c, totals.m)} /></div>
               <div className="facts">
                 <div>수익<b>{kor(totals.m)}</b></div>
@@ -157,7 +157,7 @@ export default function DeptDashboard() {
               </div>
               <div className="dv">{rows.length > 0 && <div className="dvr lh"><span>부서 · 비용/수익</span><span style={{ textAlign: 'center' }}>◀ 비용 초과 · 남김 ▶</span><span style={{ textAlign: 'right' }}>{ymL(model.cur)} 순수익</span></div>}{[...rows].sort((a, b) => b.net - a.net).map(x => { const mx = Math.max(1, ...rows.map(y => Math.abs(y.net))); const w = Math.round(Math.abs(x.net) / mx * 50); return (
                 <div key={x.d} className={'dvr' + (openDept === x.d ? ' on' : '')} onClick={() => setOpenDept(openDept === x.d ? null : x.d)} title={`${x.d} · 수익 ${fmt(x.curM)} · 비용 ${fmt(x.curC)}`}>
-                  <span className="nm">{x.d}<small>{x.r == null ? '' : x.r + '%'}</small></span>
+                  <span className="nm">{x.d}<small>{x.r == null ? '' : pctCap(x.r)}</small></span>
                   <span className="trk"><i className="negb" style={{ width: x.net < 0 ? w + '%' : 0 }} /><i className="posb" style={{ width: x.net >= 0 ? w + '%' : 0 }} /></span>
                   <span className={'v ' + (x.net >= 0 ? 'pos' : 'neg')}>{(x.net >= 0 ? '+' : '−') + kor(Math.abs(x.net))}</span>
                 </div>); })}</div>
@@ -242,8 +242,8 @@ function DeptDetail({ x, model, onDrill }: { x: Dept & { r: number | null; curM:
           <div className="tbl-wrap" style={{ marginTop: 10 }}><table className="mtbl">
             <thead><tr><th>월</th><th>수익</th><th>그중 지원</th><th>비용</th><th>그중 지원</th><th>순수익</th><th>비용/수익</th><th>인원</th></tr></thead>
             <tbody>
-              {months.map((m, i) => { const n = x.margin[i] - x.cost[i]; const r = ratio(x.cost[i], x.margin[i]); return <tr key={m}><td>{ymL(m)}</td><td>{fmt(x.margin[i])}</td><td style={{ color: 'var(--fg-3)' }}>{x.supAlloc[i] ? fmt(x.supAlloc[i]) : ''}</td><td>{fmt(x.cost[i])}</td><td style={{ color: 'var(--fg-3)' }}>{x.supCost[i] ? fmt(x.supCost[i]) : ''}</td><td style={{ color: n >= 0 ? '#2c7f2c' : 'var(--neg)' }}>{fmt(n)}</td><td style={{ color: r != null && r > 100 ? 'var(--neg)' : undefined }}>{r == null ? '-' : r + '%'}</td><td>{x.emp[i] || ''}</td></tr>; })}
-              <tr className="sum"><td>합계</td><td>{fmt(sumM)}</td><td>{sum(x.supAlloc) ? fmt(sum(x.supAlloc)) : ''}</td><td>{fmt(sumC)}</td><td>{sum(x.supCost) ? fmt(sum(x.supCost)) : ''}</td><td style={{ color: sumM - sumC >= 0 ? '#2c7f2c' : 'var(--neg)' }}>{fmt(sumM - sumC)}</td><td>{ratio(sumC, sumM) == null ? '-' : ratio(sumC, sumM) + '%'}</td><td></td></tr>
+              {months.map((m, i) => { const n = x.margin[i] - x.cost[i]; const r = ratio(x.cost[i], x.margin[i]); return <tr key={m}><td>{ymL(m)}</td><td>{fmt(x.margin[i])}</td><td style={{ color: 'var(--fg-3)' }}>{x.supAlloc[i] ? fmt(x.supAlloc[i]) : ''}</td><td>{fmt(x.cost[i])}</td><td style={{ color: 'var(--fg-3)' }}>{x.supCost[i] ? fmt(x.supCost[i]) : ''}</td><td style={{ color: n >= 0 ? '#2c7f2c' : 'var(--neg)' }}>{fmt(n)}</td><td style={{ color: r != null && r > 100 ? 'var(--neg)' : undefined }}>{pctCap(r)}</td><td>{x.emp[i] || ''}</td></tr>; })}
+              <tr className="sum"><td>합계</td><td>{fmt(sumM)}</td><td>{sum(x.supAlloc) ? fmt(sum(x.supAlloc)) : ''}</td><td>{fmt(sumC)}</td><td>{sum(x.supCost) ? fmt(sum(x.supCost)) : ''}</td><td style={{ color: sumM - sumC >= 0 ? '#2c7f2c' : 'var(--neg)' }}>{fmt(sumM - sumC)}</td><td>{pctCap(ratio(sumC, sumM))}</td><td></td></tr>
             </tbody>
           </table></div>
         </div>
