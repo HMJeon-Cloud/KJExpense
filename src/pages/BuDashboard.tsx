@@ -11,6 +11,7 @@ import { ListHead } from '../components/ListHead';
 import { type OpsDeptRow } from '../components/OpsMetrics';
 import { applyHqAlloc, useCostAlloc } from '../lib/hqAlloc';
 import AcctSummary, { type AcctModel } from '../components/AcctSummary';
+import { plMonth, usePl } from '../lib/plStmt';
 import { useAuth } from '../lib/auth';
 import { NetTrend, Spark, Donut, RatioBar, kor, ymL, C } from '../components/charts';
 
@@ -77,11 +78,22 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
     const rMargin = pctChange(kpi.curMargin, kpi.prevMargin), rCost = pctChange(kpi.curCost, kpi.prevCost);
     const r = ratio(kpi.curCost, kpi.curMargin);
     const notable = [...model.alerts.ups.map(x => ({ ...x, up: true })), ...model.alerts.downs.map(x => ({ ...x, up: false }))].sort((a, b) => b.v - a.v).slice(0, 8);
+    // 같은 부서에서 한 계정은 늘고 다른 계정은 줄었으면 계정 재분류(예: 급여 → 경상시험연구비 대체)일 가능성이 큼 → 부서 순변동을 함께 보여줌
+    const allCh = [...model.alerts.ups.map(x => ({ ...x, up: true })), ...model.alerts.downs.map(x => ({ ...x, up: false }))];
+    const byDeptCh: Record<string, { net: number; up: number; down: number; items: typeof allCh }> = {};
+    allCh.forEach(x => { const o = byDeptCh[x.d] || (byDeptCh[x.d] = { net: 0, up: 0, down: 0, items: [] }); o.net += x.up ? x.v : -x.v; if (x.up) o.up++; else o.down++; o.items.push(x); });
+    const offset = (dn: string) => { const o = byDeptCh[dn]; return o && o.up > 0 && o.down > 0 ? o.net : null; };
+    const topDept = Object.entries(byDeptCh).sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net))[0];
     const top = notable[0];
     const m = +cur.slice(4, 6) + '월';
-    const s1 = net < 0 ? `${m}에는 비용이 수익보다 ${kor(-net)} 많았습니다.` : `${m}에는 수익이 비용보다 ${kor(net)} 많았습니다.`;
-    const s2 = model.prev ? `전월보다 수익은 ${rMargin == null ? '비교 불가' : (rMargin >= 0 ? '+' : '') + rMargin + '%'}, 비용은 ${rCost == null ? '비교 불가' : (rCost >= 0 ? '+' : '') + rCost + '%'} 입니다.` : '';
-    const s3 = top ? `가장 큰 변화는 ${top.d} ${top.a} ${top.up ? '증가' : '감소'}(${top.up ? '+' : '-'}${kor(top.v)})입니다.` : '';
+    const Wd = model.realized ? '판매 이익' : '수익';   // 실현 수익 화면은 매출(수익)과 헷갈리지 않게 '판매 이익'으로 부름
+    const s1 = net < 0 ? `${m}에는 비용이 ${Wd}보다 ${kor(-net)} 많았습니다.` : `${m}에는 ${Wd}이 비용보다 ${kor(net)} 많았습니다.`;
+    const s2 = model.prev ? `전월보다 ${Wd}은 ${rMargin == null ? '비교 불가' : (rMargin >= 0 ? '+' : '') + rMargin + '%'}, 비용은 ${rCost == null ? '비교 불가' : (rCost >= 0 ? '+' : '') + rCost + '%'} 입니다.` : '';
+    let s3 = '';
+    if (topDept && topDept[1].up > 0 && topDept[1].down > 0) {
+      const g = topDept[1], its = g.items.slice().sort((a, b) => b.v - a.v).slice(0, 2);
+      s3 = `비용 변화가 가장 큰 곳은 ${topDept[0]} (순변동 ${g.net >= 0 ? '+' : '−'}${kor(Math.abs(g.net))}: ${its.map(x => `${x.a} ${x.up ? '+' : '−'}${kor(x.v)}`).join(', ')})입니다.`;
+    } else if (top) s3 = `가장 큰 변화는 ${top.d} ${top.a} ${top.up ? '증가' : '감소'}(${top.up ? '+' : '-'}${kor(top.v)})입니다.`;
     type Row = { key: string; name: string; emp: number; margin: number[]; cost: number[]; depts: { d: string; emp: number; margin: number[]; cost: number[]; alloc?: boolean }[] };
     let rows: Row[];
     let alloc: ReturnType<typeof applyHqAlloc> | null = null;
@@ -103,9 +115,19 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
       });
     }
     const total = { emp: rows.reduce((s, x) => s + x.emp, 0), margin: months.map((_, i) => rows.reduce((s, x) => s + x.margin[i], 0)), cost: months.map((_, i) => rows.reduce((s, x) => s + x.cost[i], 0)) };
-    return { net, r, s1, s2, s3, notable, rows, total, alloc, period: `${ymL(months[0])}부터 ${ymL(cur)}까지 ${months.length}개월` };
+    return { net, r, s1, s2, s3, notable, offset, rows, total, alloc, period: `${ymL(months[0])}부터 ${ymL(cur)}까지 ${months.length}개월` };
   }, [model, allocCfg]);
 
+  // 확정(손익계산서) 영업이익과 본부별 앱 계산 순수익의 연결 — 실현 수익 화면, 전체 권한, 마감 완료 월만
+  const pl = usePl();
+  const bridge = useMemo(() => {
+    if (!model || model.empty || !d || !model.realized || model.deptLevel || !model.acct) return null;
+    const off = plMonth(pl, model.cur); if (!off) return null;
+    const offs = model.months.map(m => plMonth(pl, m));
+    const cumOff = offs.every(Boolean) ? offs.reduce((a, o) => a + o!.op, 0) : null;
+    return { op: off.op, adj: off.op - d.net, cumOp: cumOff, cumNet: sum(d.total.margin) - sum(d.total.cost) };
+  }, [model, d, pl]);
+  const W = model?.realized ? '판매 이익' : '수익';
   const hasPrev = ctl.baseMonth > '2025-01';
   return (
     <div className="page brief">
@@ -127,6 +149,10 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
         .verdict .text{padding:22px 26px;display:flex;flex-direction:column;justify-content:center;gap:10px}
         .verdict .text p{margin:0;font-size:15.5px;line-height:1.7;color:var(--fg);max-width:60ch}
         .verdict .text p.first{font-size:18px;font-weight:700}
+        .verdict .bridge{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff8e6;border:1px solid #f1dca5;border-radius:10px;padding:8px 12px;font-size:12px;color:var(--fg-2);max-width:max-content}
+        .verdict .bridge b{display:block;font:700 15px var(--font-num);color:var(--fg)}.verdict .bridge i{font-style:normal;font-weight:700;color:var(--fg-3)}
+        .notable .t small em{font-style:normal;color:#9a6f00}
+        table.score tr.adj td{background:#fffdf5;color:var(--fg-2);font-size:12.5px}table.score tr.adj.fin td{font-weight:700;color:var(--fg)}
         .verdict .facts{display:flex;gap:22px;flex-wrap:wrap;margin-top:4px}
         .verdict .facts div{font-size:12.5px;color:var(--fg-3)}
         .verdict .facts b{display:block;font:700 16px var(--font-num);color:var(--fg);font-variant-numeric:tabular-nums}
@@ -166,7 +192,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
       `}</style>
 
       <div className="ttl">
-        <div><h1>{title}</h1>{d && <div className="sub">{d.period} 기준. 수익은 {model!.realized ? '판매 실현 수익 + 결산 매출(상품·제품·수수료매출(결산))' : '구매/판매 이윤을 부서 배분 비율로 나눈 값'}, 비용은 {model!.realized ? '판관비 전표 합계(제조 노무비·경비는 제품 원가에 이미 포함돼 제외)' : '전표 합계'}입니다.</div>}</div>
+        <div><h1>{title}</h1>{d && <div className="sub">{d.period} 기준. {W}은 {model!.realized ? '판매금액 − 원가(매출이 아니라 판매로 남긴 이익) + 결산 매출(상품·제품·수수료매출(결산))' : '구매/판매 이윤을 부서 배분 비율로 나눈 값'}, 비용은 {model!.realized ? '판관비 전표 합계(제조 노무비·경비는 제품 원가에 이미 포함돼 제외)' : '전표 합계'}입니다.</div>}</div>
         <span className="sp" />
         <span className="monthnav" title="기준월">
           <button onClick={() => setBase(shiftMonth(ctl.baseMonth, -1))} disabled={!hasPrev} aria-label="이전 달">‹</button>
@@ -186,18 +212,25 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 1. 결론 */}
           <section className="verdict">
             <div className="big" style={{ borderTop: `4px solid ${d.net >= 0 ? '#3aa63a' : '#d93c3c'}` }}>
-              <span className="lbl">{ymL(model.cur)} 순수익 (수익 − 비용)<HelpDot id={hid('verdict')} /></span>
+              <span className="lbl">{ymL(model.cur)} {bridge ? '본부별 합계 순수익 (앱 계산)' : `순수익 (${W} − 비용)`}<HelpDot id={hid('verdict')} /></span>
               <span className="bignum" style={{ color: d.net >= 0 ? '#2c7f2c' : '#b32b2b' }}>{d.net >= 0 ? '+' : '−'}{kor(Math.abs(d.net))}</span>
               <span className="help num" style={{ textAlign: 'left' }}>{fmt(d.net)}원</span>
-              <span className="ratio">비용/수익 <RatioBar ratio={d.r} /></span>
+              <span className="ratio">비용/{W} <RatioBar ratio={d.r} /></span>
             </div>
             <div className="text">
-              <p className="first">{d.s1}</p>
+              <p className="first">{bridge ? '본부별 앱 계산으로는 ' : ''}{d.s1}</p>
+              {bridge && (
+                <div className="bridge" title="회계 조정 = 재고 평가·분기 결산 조정처럼 ERP 원가계산에서만 나오는 매출원가 차이. 본부·부서별로 나눌 수 없어 회사 전체에만 반영합니다.">
+                  <span>앱 계산 순수익<b>{(d.net >= 0 ? '+' : '−') + kor(Math.abs(d.net))}</b></span><i>{bridge.adj >= 0 ? '+' : '−'}</i>
+                  <span>회계 조정 (본부 구분 불가)<b style={{ color: bridge.adj >= 0 ? '#2c7f2c' : '#b32b2b' }}>{kor(Math.abs(bridge.adj))}</b></span><i>=</i>
+                  <span>확정 영업이익 (손익계산서)<b style={{ color: bridge.op >= 0 ? '#2c7f2c' : '#b32b2b' }}>{(bridge.op >= 0 ? '+' : '−') + kor(Math.abs(bridge.op))}</b></span>
+                </div>
+              )}
               <p>{d.s2} {d.s3}</p>
               <div className="facts">
-                <div>{ymL(model.cur)} 수익<b>{kor(model.kpi.curMargin)}</b></div>
+                <div>{ymL(model.cur)} {W}<b>{kor(model.kpi.curMargin)}</b></div>
                 <div>{ymL(model.cur)} 비용<b>{kor(model.kpi.curCost)}</b></div>
-                <div>{model.months.length}개월 누적 수익<b>{kor(model.kpi.tMargin)}</b></div>
+                <div>{model.months.length}개월 누적 {W}<b>{kor(model.kpi.tMargin)}</b></div>
                 <div>{model.months.length}개월 누적 비용<b>{kor(model.kpi.tCost)}</b></div>
                 <div>누적 순수익<b style={{ color: model.kpi.tMargin - model.kpi.tCost >= 0 ? '#2c7f2c' : '#b32b2b' }}>{(model.kpi.tMargin - model.kpi.tCost >= 0 ? '+' : '−') + kor(Math.abs(model.kpi.tMargin - model.kpi.tCost))}</b></div>
               </div>
@@ -208,18 +241,18 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           <div className="duo">
             <section className="sec">
               <h2>월별 순수익 추이<HelpDot id={hid('trend')} /></h2>
-              <p className="lead">막대는 그 달의 순수익(초록 남음, 빨강 초과). 실선은 수익, 점선은 비용입니다.</p>
+              <p className="lead">막대는 그 달의 순수익(초록 남음, 빨강 초과). 실선은 {W}, 점선은 비용입니다.</p>
               <NetTrend months={model.months} margin={model.series.margin} cost={model.series.cost} height={300} />
             </section>
             <section className="sec">
               <h2>이번 달 주목할 변화<HelpDot id={hid('alerts')} /></h2>
-              <p className="lead">최근 평균보다 크게 늘거나 줄어든 부서 계정. 클릭하면 전표를 봅니다.</p>
+              <p className="lead">최근 평균보다 크게 늘거나 줄어든 부서 계정. 클릭하면 전표를 봅니다. "부서 순변동"이 붙은 줄은 같은 부서의 다른 계정과 상쇄되는 변화(계정 재분류 가능)입니다.</p>
               <div className="notable">
                 {d.notable.length === 0 ? <span className="help">눈에 띄는 변화가 없습니다.</span> : <ListHead cls="it" cols={['', '계정 · 부서', '>평소 대비']} style={{ paddingBlock: '0 5px' }} />}
                 {d.notable.map((x, i) => (
                   <div key={i} className="it" onClick={() => drill({ dept: x.d, acc: x.a })}>
                     <span className={'tag ' + (x.up ? 'n' : 'b')} style={{ padding: '2px 0', textAlign: 'center' }}>{x.up ? '▲' : '▼'}</span>
-                    <span className="t">{accL(x.a)}<small>{x.d}{model.deptLevel ? '' : ' · ' + x.hq}</small></span>
+                    <span className="t">{accL(x.a)}<small>{x.d}{model.deptLevel ? '' : ' · ' + x.hq}{d.offset(x.d) != null && <em title="같은 부서에서 늘어난 계정과 줄어든 계정이 함께 있습니다. 계정 재분류(대체 전표)일 수 있어 부서 순변동을 함께 봅니다."> · 부서 순변동 {(d.offset(x.d)! >= 0 ? '+' : '−') + kor(Math.abs(d.offset(x.d)!))}</em>}</small></span>
                     <span className="amt" style={{ color: x.up ? 'var(--neg)' : 'var(--brand)' }}>{(x.up ? '+' : '−') + kor(x.v)}</span>
                   </div>
                 ))}
@@ -230,11 +263,11 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
           {/* 3. 스코어보드 */}
           <section className="sec">
             <h2>{model.deptLevel ? '부서별' : '본부별'} 현황<HelpDot id={hid('scoreboard')} /></h2>
-            <p className="lead" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>{ymL(model.cur)} 기준. 비용/수익은 100%를 넘으면 수익보다 비용이 많다는 뜻입니다.</span>{!model.deptLevel && <span className="seg" style={{ marginLeft: 'auto' }}><button className={!allOpen ? 'on' : ''} onClick={() => { setAllOpen(false); setOpen({}); }}>본부만</button><button className={allOpen ? 'on' : ''} onClick={() => { setAllOpen(true); setOpen({}); }}>부서까지</button></span>}</p>
+            <p className="lead" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><span>{ymL(model.cur)} 기준. 비용/{W}은 100%를 넘으면 {W}보다 비용이 많다는 뜻입니다.</span>{!model.deptLevel && <span className="seg" style={{ marginLeft: 'auto' }}><button className={!allOpen ? 'on' : ''} onClick={() => { setAllOpen(false); setOpen({}); }}>본부만</button><button className={allOpen ? 'on' : ''} onClick={() => { setAllOpen(true); setOpen({}); }}>부서까지</button></span>}</p>
             {d.alloc && <p className="help" style={{ margin: '-4px 0 6px' }}>경영전략본부·연구소의 비용과 인원은 [비용 배분 설정] 비율로 수익 본부에 나눴습니다 ({d.alloc.ruleSrc ? ymL(d.alloc.ruleSrc) + ' 설정' : '기본 규칙: 응용기술연구소·이노베이션센터 → 소재사업본부, 의약연구소 → API합성본부'}). 본부를 펼치면 "← … 배분" 줄에서 받은 금액을 볼 수 있습니다.{isAdmin && <button className="btn sm ghost" style={{ marginLeft: 6, padding: '1px 8px' }} onClick={() => nav('/settings/cost-alloc')}>비용 배분 설정 →</button>}</p>}
             <div className="tbl-wrap">
               <table className="score">
-                <thead><tr><th>{model.deptLevel ? '부서' : '본부'}</th><th>인원</th><th>수익</th><th>비용</th><th>순수익</th><th style={{ minWidth: 150 }}>비용/수익</th><th>비용 전월비</th><th>누적 순수익</th><th style={{ width: 140 }}>순수익 추이</th></tr></thead>
+                <thead><tr><th>{model.deptLevel ? '부서' : '본부'}</th><th>인원</th><th>{W}</th><th>비용</th><th>순수익</th><th style={{ minWidth: 150 }}>비용/{W}</th><th>비용 전월비</th><th>누적 순수익</th><th style={{ width: 140 }}>순수익 추이</th></tr></thead>
                 <tbody>
                   <tr className="total">
                     <td>전체</td><td>{fmtEmp(d.total.emp)}</td><td>{fmt(last(d.total.margin))}</td><td>{fmt(last(d.total.cost))}</td>
@@ -244,6 +277,10 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     <td className={sum(d.total.margin) - sum(d.total.cost) >= 0 ? 'pos' : 'neg'}>{fmt(sum(d.total.margin) - sum(d.total.cost))}</td>
                     <td><Spark series={d.total.margin.map((v, i) => v - d.total.cost[i])} color="#64748b" h={34} /></td>
                   </tr>
+                  {bridge && <>
+                    <tr className="adj" title="재고 평가·분기 결산 조정 등 ERP 원가계산에서만 나오는 금액. 본부·부서로 나눌 수 없습니다."><td>회계 조정 (본부 구분 불가)</td><td>-</td><td>-</td><td>-</td><td className={bridge.adj >= 0 ? 'pos' : 'neg'}>{fmt(Math.round(bridge.adj))}</td><td /><td /><td className={bridge.cumOp == null ? '' : bridge.cumOp - bridge.cumNet >= 0 ? 'pos' : 'neg'}>{bridge.cumOp == null ? '-' : fmt(Math.round(bridge.cumOp - bridge.cumNet))}</td><td /></tr>
+                    <tr className="adj fin"><td>확정 영업이익 (손익계산서)</td><td>-</td><td>-</td><td>-</td><td className={bridge.op >= 0 ? 'pos' : 'neg'}>{fmt(Math.round(bridge.op))}</td><td /><td /><td className={bridge.cumOp == null ? '' : bridge.cumOp >= 0 ? 'pos' : 'neg'}>{bridge.cumOp == null ? '-' : fmt(Math.round(bridge.cumOp))}</td><td /></tr>
+                  </>}
                   {d.rows.map(r => {
                     const isOpen = open[r.key] ?? allOpen;
                     const rowCells = (name: string, emp: number, margin: number[], cost: number[], cls: string, depts: string[], caret?: boolean) => (
@@ -269,8 +306,8 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
 
           {/* 4. 수익 구성 */}
           <section className="sec">
-            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} 수익은 어디서 났나<HelpDot id={hid('revenue')} /></h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
-            <p className="lead">{model.realized ? '사업장별 실현 수익과 부서별 수익입니다.' + (model.settle && model.settle.series[model.months.length - 1] ? ` 결산 매출 ${kor(model.settle.series[model.months.length - 1])}이 포함돼 있습니다.` : '') : '왼쪽은 구매/판매 이윤이 어느 팀 기준으로 발생했는지, 오른쪽은 배분 비율을 거쳐 부서에 돌아간 수익입니다.'}{model.revenue?.supportCur ? ` 지원 내역으로 받은 수익 ${kor(model.revenue.supportCur)}이 부서 수익에 포함돼 있습니다.` : ''}</p>
+            <div className="row" style={{ gap: 12 }}><h2>{ymL(model.cur)} {W}은 어디서 났나<HelpDot id={hid('revenue')} /></h2><button className="btn sm ghost" onClick={() => setShowRev(s => !s)}>{showRev ? '접기' : '펼치기'}</button></div>
+            <p className="lead">{model.realized ? '사업장별·부서별 판매 이익입니다.' + (model.settle && model.settle.series[model.months.length - 1] ? ` 결산 매출 ${kor(model.settle.series[model.months.length - 1])}이 포함돼 있습니다.` : '') : '왼쪽은 구매/판매 이윤이 어느 팀 기준으로 발생했는지, 오른쪽은 배분 비율을 거쳐 부서에 돌아간 수익입니다.'}{model.revenue?.supportCur ? ` 지원 내역으로 받은 수익 ${kor(model.revenue.supportCur)}이 부서 수익에 포함돼 있습니다.` : ''}</p>
             {showRev && model.revenue && (
               <div className="costgrid">
                 <div>
@@ -289,8 +326,8 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                   })}
                   {model.revenue.byBU.length > 0 && (
                     <div style={model.revenue.byGroup.length ? { marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' } : undefined}>
-                      <div className="help" style={{ marginBottom: 6 }}>사업장별 {model.realized ? '실현 수익' : '실현 수익 (참고)'}</div>
-                      <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장</span><span>{ymL(model.cur)} 실현 수익 · 전월비</span></div>
+                      <div className="help" style={{ marginBottom: 6 }}>사업장별 {model.realized ? '판매 이익' : '실현 수익 (참고)'}</div>
+                      <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장</span><span>{ymL(model.cur)} {model.realized ? '판매 이익' : '실현 수익'} · 전월비</span></div>
                       {model.revenue.byBU.slice().sort((a, b) => b.cur - a.cur).map(b => (
                         <div key={b.bu} className="row" style={{ justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{b.bu}</span><span className="row" style={{ gap: 10 }}><span className="num">{fmt(b.cur)}</span><Delta c={b.cur} p={b.prev} /></span></div>
                       ))}
@@ -302,7 +339,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                     const hqs = Object.keys(st.byHq).filter(h => st.byHq[h].some(v => v !== 0));
                     return (
                       <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
-                        <div className="help" style={{ marginBottom: 6 }}>위 사업장 수익에 포함된 결산 매출 (전표 상품·제품·수수료매출(결산) — 분기 마감 수정분개·IFRS 반품충당부채)</div>
+                        <div className="help" style={{ marginBottom: 6 }}>위 사업장 {W}에 포함된 결산 매출 (전표 상품·제품·수수료매출(결산) — 분기 마감 수정분개·IFRS 반품충당부채)</div>
                         <div className="row lh" style={{ justifyContent: 'space-between' }}><span>사업장 · 계정</span><span>{ymL(model.cur)} · {model.months.length}개월 합계</span></div>
                         {hqs.map(h => (
                           <div key={h} className="row" style={{ justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span>{h}</span><span className="row" style={{ gap: 10 }}><span className="num" style={{ color: st.byHq[h][ci] < 0 ? 'var(--neg)' : undefined }}>{fmt(st.byHq[h][ci])}</span><span className="num help">{fmt(st.byHq[h].reduce((a, b) => a + b, 0))}</span></span></div>
@@ -315,7 +352,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
                   })()}
                 </div>
                 <div>
-                  {model.revenue.byDept.length > 0 && <ListHead cls="toprow" cols={['', '부서', '', '>' + (model.realized ? '실현 수익' : '배분 수익'), '>전월비']} />}
+                  {model.revenue.byDept.length > 0 && <ListHead cls="toprow" cols={['', '부서', '', '>' + (model.realized ? '판매 이익' : '배분 수익'), '>전월비']} />}
                   {model.revenue.byDept.slice(0, 10).map((x, i, arr) => {
                     const max = Math.max(1, ...arr.map(t => Math.abs(t.cur)));
                     return (

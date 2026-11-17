@@ -395,24 +395,24 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
 
         {/* ① 인당 */}
         <div className="ops-card wide">
-          <h3><span className="no">1</span>인당 수익·비용·순수익<HelpDot id="ops.percap" /></h3>
-          <p className="lead">본부 크기 차이를 빼고 1명이 얼마를 벌고 쓰는지 봅니다. 수익 = 구매/판매 실현 수익, 비용 = 전표 비용. 경영전략본부·연구소의 비용과 인원은 [비용 배분 설정] 비율로 수익 본부에 나눴습니다{perCap.ruleSrc ? ` (${ymL(perCap.ruleSrc)} 설정)` : ' (기본 규칙)'}. 본부를 누르면 받은 배분이 보입니다.</p>
+          <h3><span className="no">1</span>인당 판매 이익·비용·순수익<HelpDot id="ops.percap" /></h3>
+          <p className="lead">본부 크기 차이를 빼고 1명이 얼마를 벌고 쓰는지 봅니다. 판매 이익 = 판매금액 − 원가(매출이 아님), 비용 = 전표 비용. 경영전략본부·연구소의 비용과 인원은 [비용 배분 설정] 비율로 수익 본부에 나눴습니다{perCap.ruleSrc ? ` (${ymL(perCap.ruleSrc)} 설정)` : ' (기본 규칙)'}. 본부를 누르면 받은 배분이 보입니다.</p>
           {!perCap.hasEmp ? <div className="ops-msg">기간 안에 [월/부서별 인원] 데이터가 없습니다.</div> : <>
             <div className="ops-kpis">
               <Kpi l={`${curL} 인원`} v={fmtEmp(perCap.total.emp) + '명'} s={`기간 입사 ${perCap.total.inn} · 퇴사 ${perCap.total.out} · 기간 초 ${fmtEmp(perCap.total.empStart)}명`} />
-              <Kpi l="인당 실현 수익" v={perCap.total.pm == null ? '-' : kor(perCap.total.pm)} />
+              <Kpi l="인당 판매 이익" v={perCap.total.pm == null ? '-' : kor(perCap.total.pm)} />
               <Kpi l="인당 비용" v={perCap.total.pc == null ? '-' : kor(perCap.total.pc)} />
               <Kpi l="인당 순수익" v={perCap.total.pn == null ? '-' : sgn(perCap.total.pn) + kor(Math.abs(perCap.total.pn))} tone={perCap.total.pn == null ? undefined : perCap.total.pn >= 0 ? 'pos' : 'neg'} s={perCap.total.avgN == null ? undefined : `기간 월평균 ${sgn(perCap.total.avgN)}${kor(Math.abs(perCap.total.avgN))}`} />
             </div>
             <div className="tbl-wrap"><table>
-              <thead><tr><th>본부</th><th>인원 (배분 포함)</th><th>입사·퇴사(기간)</th><th>인당 실현 수익</th><th>인당 비용</th><th>인당 순수익</th><th>기간 월평균 인당 순수익</th><th style={{ width: 130 }}>인당 순수익 추이</th></tr></thead>
+              <thead><tr><th>본부</th><th>인원 (배분 포함)</th><th>입사·퇴사(기간)</th><th>인당 판매 이익</th><th>인당 비용</th><th>인당 순수익</th><th>기간 월평균 인당 순수익</th><th style={{ width: 130 }}>인당 순수익 추이</th></tr></thead>
               <tbody>
                 {perCap.rows.map(r => {
                   const op = !!openCap[r.name];
                   return [
                     <tr key={r.name} className={r.inFrom.length ? 'clk' : ''} onClick={() => r.inFrom.length && setOpenCap(o => ({ ...o, [r.name]: !o[r.name] }))}>
                       <td>{r.inFrom.length ? <span className="caret">{op ? '▾' : '▸'}</span> : <span className="caret" />}{r.name}</td><td>{fmtEmp(r.emp)}</td><td className="mut">{r.inn || r.out ? `+${r.inn} / −${r.out}` : '-'}</td>
-                      <td title={r.emp ? undefined : `인원 없음 · 실현 수익 ${fmt(r.mCur)}원`}>{r.pm == null ? (r.mCur ? <span className="mut">인원 없음 ({kor(r.mCur)})</span> : '-') : fmt(r.pm)}</td><td>{r.pc == null ? '-' : fmt(r.pc)}</td>
+                      <td title={r.emp ? undefined : `인원 없음 · 판매 이익 ${fmt(r.mCur)}원`}>{r.pm == null ? (r.mCur ? <span className="mut">인원 없음 ({kor(r.mCur)})</span> : '-') : fmt(r.pm)}</td><td>{r.pc == null ? '-' : fmt(r.pc)}</td>
                       <td className={r.pn == null ? '' : r.pn >= 0 ? 'pos' : 'neg'}>{r.pn == null ? '-' : fmt(r.pn)}</td>
                       <td className={r.avgN == null ? '' : r.avgN >= 0 ? 'pos' : 'neg'}>{r.avgN == null ? '-' : fmt(r.avgN)}</td>
                       <td><Line vals={r.line} color={(r.pn ?? 0) >= 0 ? '#2c7f2c' : '#d93c3c'} /></td>
@@ -587,20 +587,20 @@ export function OpsMetrics({ model, allocCfg }: { model: OpsModel; allocCfg: Cos
 
         {/* ⑥ 고정비 대비 수익 */}
         <div className="ops-card wide">
-          <h3><span className="no">6</span>고정비 대비 수익<HelpDot id="ops.fixed" /></h3>
+          <h3><span className="no">6</span>고정비 대비 판매 이익<HelpDot id="ops.fixed" /></h3>
           {fxErr ? <div className="ops-msg">{fxErr === 'NOFN' ? '고정비 계산 DB 함수가 필요합니다. 관리자가 Supabase SQL Editor 에서 0009_fixed_cost.sql 을 실행하면 표시됩니다.' : '고정비를 불러오지 못했습니다: ' + fxErr}</div>
             : !fxd ? <Loading err={null} />
             : !fxd.configured ? <div className="ops-msg">아직 고정비 기준이 정해지지 않았습니다. {isAdmin ? <>관리자가 <button className="btn sm" onClick={() => nav('/settings/fixed')}>고정비 설정 →</button> 에서 계정·적요를 고르면 표시됩니다.</> : '관리자에게 [설정 › 고정비 설정]을 요청하세요.'}</div>
             : (() => {
               const c = fixed.cover[ci], gap = fixed.rev[ci] - fixed.fx[ci];
               return <>
-                <p className="lead">{fixed.fx[ci] > 0 ? (gap >= 0 ? `${curL} 실현 수익이 고정비를 ${c}% 덮었습니다. 고정비를 내고 ${kor(gap)} 남았습니다.` : `${curL} 실현 수익이 고정비의 ${c}% 입니다. 고정비만으로 ${kor(-gap)} 모자랍니다.`) : '기준월 고정비가 없습니다.'}</p>
+                <p className="lead">{fixed.fx[ci] > 0 ? (gap >= 0 ? `${curL} 판매 이익이 고정비를 ${c}% 덮었습니다. 고정비를 내고 ${kor(gap)} 남았습니다.` : `${curL} 판매 이익이 고정비의 ${c}% 입니다. 고정비만으로 ${kor(-gap)} 모자랍니다.`) : '기준월 고정비가 없습니다.'}</p>
                 <div className="ops-kpis">
-                  <Kpi l="고정비 커버율" v={c == null ? '-' : c + '%'} tone={c == null ? undefined : c >= 100 ? 'pos' : 'neg'} s="실현 수익 ÷ 고정비" />
+                  <Kpi l="고정비 커버율" v={c == null ? '-' : c + '%'} tone={c == null ? undefined : c >= 100 ? 'pos' : 'neg'} s="판매 이익 ÷ 고정비" />
                   <Kpi l={`${curL} 고정비`} v={kor(fixed.fx[ci])} s={`전표 비용의 ${pct1(fixed.fx[ci], fixed.vc[ci]) ?? '-'}%`} />
-                  <Kpi l="수익 − 고정비" v={sgn(gap) + kor(Math.abs(gap))} tone={gap >= 0 ? 'pos' : 'neg'} />
+                  <Kpi l="판매 이익 − 고정비" v={sgn(gap) + kor(Math.abs(gap))} tone={gap >= 0 ? 'pos' : 'neg'} />
                 </div>
-                <MonthBars months={months} a={fixed.rev} b={fixed.fx} aLbl="실현 수익" bLbl="고정비" />
+                <MonthBars months={months} a={fixed.rev} b={fixed.fx} aLbl="판매 이익" bLbl="고정비" />
                 {fixed.accList.length > 0 && <div>
                   <ListHead cls="ops-rk" cols={['', `${curL} 고정비 계정`, '>금액', '>비중', '']} />
                   {fixed.accList.slice(0, nFixed).map(([a, v], i) => <div key={a} className="ops-rk"><span className="help">{i + 1}</span><span className="nm" title={a}>{accL(a)}</span><span>{fmt(v)}</span><span className="mut">{pct1(v, fixed.fx[ci]) ?? '-'}%</span><span /></div>)}

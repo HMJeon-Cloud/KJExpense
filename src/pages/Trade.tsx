@@ -1,6 +1,7 @@
 // 구매/판매 내역 — 한눈에: 결론 띠(매출→원가→수익) → 월별 수익 → 부서·품목·수입처 순위 → 구조별 표(부서까지 펼침)
 //   필터·집계·LOT 상세 계산은 기존 모듈(legacy/screens/trade.js)이 그대로 수행하고, 이 화면은 그 상태를 받아 그립니다.
 //   LOT 상세(BL 단위) 표는 기존 컴포넌트(TreeNode)를 그대로 끼워 넣어 숫자가 달라지지 않게 했습니다.
+import { useAuth } from '../lib/auth';
 import { useEffect, useMemo, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import { fmt } from '../components/ui';
 import { HelpDot } from '../components/Help';
@@ -34,6 +35,7 @@ function rankBy(tree: Record<string, Node> | null, type: string) {
 }
 
 export default function Trade() {
+  const isAdmin = useAuth().employee?.role === 'admin';
   const [b, setB] = useState<Bridge | null>(() => KJ()?.trade ?? null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [q, setQ] = useState('');
@@ -204,7 +206,7 @@ export default function Trade() {
                   <div><div className="help">실현 수익</div><div className="n" style={{ color: s.margin >= 0 ? '#2c7f2c' : '#b32b2b' }}>{kor(s.margin)}</div><div className="help num">{fmt(s.margin)}</div></div>
                 </div>
                 <div className="help" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--line)' }}>
-                  <b style={{ color: 'var(--fg)' }}>재고 평가액 {kor(s.inventory)}</b><HelpDot id="trade.verdict" /> · 설정 판매가 기준 수익 구매 {kor(s.estMargin)} · 합성 {kor(s.estSynth)} · 영업 {kor(s.estSales)}<HelpDot id="trade.est" />
+                  <b style={{ color: 'var(--fg)' }}>재고 평가액 {kor(s.inventory)}</b><HelpDot id="trade.verdict" />{isAdmin && <> · <span title="관리자에게만 보이는 참고값입니다. 판매가가 설정되지 않은 품목은 0으로 계산되어 구매는 큰 음수, 영업은 큰 양수로 나올 수 있습니다. 부서별 이윤(국전·부서별 화면)은 미설정 품목을 빼고 계산합니다.">설정 판매가 기준 수익(관리자 참고 · 미설정 품목 포함) 구매 {kor(s.estMargin)} · 합성 {kor(s.estSynth)} · 영업 {kor(s.estSales)}</span><HelpDot id="trade.est" /></>}
                 </div>
               </div>
               <div>

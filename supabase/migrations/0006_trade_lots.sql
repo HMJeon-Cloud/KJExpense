@@ -16,9 +16,11 @@ begin
 end $$;
 
 -- 열 이름 정규화: 대문자 + 공백/줄바꿈/BOM 제거   ※ JS normalizeRow
+-- ※ 없어진 부서 → 지금 부서: 운영지원팀_ATS → 보관관리_ATS (화면 쪽 hub.js DEPT_ALIAS 와 같이 고칠 것)
 create or replace function public.kj_norm(d jsonb) returns jsonb
 language sql immutable as $$
-  select coalesce((select jsonb_object_agg(upper(regexp_replace(key, '[\s\r\n' || chr(65279) || ']+', '', 'g')), value) from jsonb_each(d)), '{}'::jsonb)
+  select case when btrim(n ->> 'DEPTNAME') = '운영지원팀_ATS' then jsonb_set(n, '{DEPTNAME}', '"보관관리_ATS"'::jsonb) else n end
+  from (select coalesce((select jsonb_object_agg(upper(regexp_replace(key, '[\s\r\n' || chr(65279) || ']+', '', 'g')), value) from jsonb_each(d)), '{}'::jsonb) as n) x
 $$;
 -- 여러 후보 열 중 첫 번째 비어 있지 않은 값 (후보 5개까지)   ※ JS getVal(row, ...keys) — 단순식이라 쿼리에 인라인됨
 create or replace function public.kj_v(d jsonb, variadic ks text[]) returns text

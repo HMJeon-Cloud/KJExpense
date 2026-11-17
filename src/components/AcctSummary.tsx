@@ -87,19 +87,22 @@ export default function AcctSummary({ acct, cur, isAdmin }: { acct: AcctModel; c
   const pts: { t: string; b: string }[] = [];
   if (ytd) {
     const avg = ytd.op / ytd.n;
-    pts.push({ t: `올해 누적 (1~${d.mm}월)`, b: `영업이익 ${kor(ytd.op)}${rate(ytd) != null ? ` (이익률 ${rate(ytd)!.toFixed(1)}%)` : ''}, 월평균 ${kor(avg)}. 남은 달도 같은 속도라면 연간 약 ${kor(avg * 12)} 입니다.${lytd ? ` 전년 같은 기간(${kor(lytd.op)})보다 ${sgn(ytd.op - lytd.op)}.` : ''}` });
+    const l3 = d.series.slice(-3).filter(x => x.v); const r3 = l3.length === 3 ? l3.reduce((a, x) => a + x.v!.op, 0) / 3 : null;
+    pts.push({ t: `올해 누적 (1~${d.mm}월)`, b: `영업이익 ${kor(ytd.op)}${rate(ytd) != null ? ` (이익률 ${rate(ytd)!.toFixed(1)}%)` : ''}, 월평균 ${kor(avg)}. 남은 달도 올해 평균 속도라면 연간 약 ${kor(avg * 12)}${r3 != null && ytd.n > 3 ? `, 최근 3개월 속도(월 ${kor(r3)})라면 약 ${kor(ytd.op + r3 * (12 - ytd.n))}` : ''} 입니다.${lytd ? ` 전년 같은 기간(${kor(lytd.op)})보다 ${sgn(ytd.op - lytd.op)}.` : ''}` });
     if (ytd.sales && ytd.gp > 0) {
       const be = (ytd.sga / ytd.n) / (ytd.gp / ytd.sales), avgS = ytd.sales / ytd.n;
       pts.push({ t: '손익분기 매출', b: `판관비(월평균 ${kor(ytd.sga / ytd.n)})를 감당하려면 매출이 월 ${kor(be)} 이상이어야 합니다. 올해 월평균 매출 ${kor(avgS)} — ${avgS >= be ? `매출이 ${((1 - be / avgS) * 100).toFixed(0)}% 줄어도 적자가 아닙니다.` : `손익분기까지 월 ${kor(be - avgS)} 부족합니다.`}` });
     }
   }
   if (d.why && p) {
-    const w = d.why; const parts = [['매출 증감', w.sales], ['이익률(매출총이익률) 변화', w.rate], ['판관비 증감', w.sga]] as [string, number][];
-    const top = parts.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
-    pts.push({ t: '전월 대비 변동 원인', b: `영업이익이 전월보다 ${sgn(c.op - p.op)} — 가장 큰 원인은 ${top[0]} (${sgn(top[1])}) 입니다.` });
+    const w = d.why; const parts = [[w.sales >= 0 ? '매출 증가' : '매출 감소', w.sales], [w.rate >= 0 ? '매출총이익률 상승' : '매출총이익률 하락', w.rate], [w.sga >= 0 ? '판관비 감소' : '판관비 증가', w.sga]] as [string, number][];
+    const chg = c.op - p.op;
+    const lst = (pos: boolean) => parts.filter(x => x[1] !== 0 && (x[1] > 0) === pos).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).map(x => `${x[0]} ${sgn(x[1])}`).join(', ');
+    const up = lst(true), dn = lst(false);
+    pts.push({ t: '전월 대비 변동 원인', b: `영업이익이 전월보다 ${sgn(chg)} ${chg >= 0 ? '늘었습니다' : '줄었습니다'}.${up ? ` 늘린 요인: ${up}.` : ''}${dn ? ` 줄인 요인: ${dn}.` : ''}` });
   }
   if (gpr(c) != null && gpr(ytd) != null) { const g = pp(gpr(c), gpr(ytd))!; if (Math.abs(g) >= 1) pts.push({ t: '매출총이익률', b: `${ymL(cur)} ${gpr(c)!.toFixed(1)}% — 올해 평균(${gpr(ytd)!.toFixed(1)}%)보다 ${g > 0 ? '+' : ''}${g.toFixed(1)}%p ${g > 0 ? '높습니다' : '낮습니다. 품목 구성·판매 단가·원가를 확인해 볼 달입니다'}.` }); }
-  if (d.q.length > 1) pts.push({ t: '분기 흐름', b: d.q.map(x => `${x.q}분기${x.full ? '' : '(진행 중)'} ${kor(x.op)}`).join(' → ') + '. 분기 마지막 달(3·6·9·12월)은 결산 조정이 한꺼번에 반영되어 월 단위로는 출렁이므로, 분기·누적으로 보는 것이 정확합니다.' });
+  if (d.q.length > 1) pts.push({ t: '분기 흐름', b: d.q.map(x => `${x.q}분기${x.full ? '' : '(진행 중)'} ${kor(x.op)}`).join(' → ') + '. 분기 마지막 달(3·6·9·12월)은 결산 조정이 한꺼번에 반영되어 월 금액이 출렁이므로 분기·누적으로 보세요.' + (d.q.some(x => !x.off) ? ' (추정 월이 섞인 분기는 확정 후 달라질 수 있습니다.)' : '') });
 
   const maxAbs = Math.max(1, ...d.series.map(s => Math.abs(s.v?.op || 0)));
   return (
@@ -200,7 +203,7 @@ export default function AcctSummary({ acct, cur, isAdmin }: { acct: AcctModel; c
           <div style={{ marginTop: 6 }}>
             · 음성공장 제조비용(소재 제품에 얹는 노무비·경비): 올해 발생 {fmt(Math.round(d.ref.pool))} 중 판매되어 매출원가로 반영 {fmt(Math.round(d.ref.oh))} — 차이는 아직 재고에 남아 있거나 전년 재고가 팔린 몫입니다.<br />
             · 폐기(수량 × LOT 원가): {ymL(cur)} {fmt(Math.round(d.ref.dispCur))}, 올해 누적 {fmt(Math.round(d.ref.disp))} — 손익계산서에서는 매출원가 밖(타계정 대체)으로 처리되어 위 영업이익에는 들어 있지 않습니다.<br />
-            · 아래 본부·부서별 수익은 앱 계산(회계 시점 반영)이며 본부별로 나눌 수 있는 금액만 담습니다. 회사 전체 확정 금액과의 차이는 위 "회계 조정" 입니다.
+            · 아래 본부·부서별 판매 이익은 앱 계산(회계 시점 반영)이며 본부별로 나눌 수 있는 금액만 담습니다. 회사 전체 확정 금액과의 차이는 위 "회계 조정" 입니다.
           </div>
         )}
       </div>

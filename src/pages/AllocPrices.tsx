@@ -51,6 +51,19 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
   const assets = useMemo(() => Array.from(new Set(rows.map(r => r.it.asset).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko')), [rows]);
   const filtered = useMemo(() => { const a = qNo.trim().toLowerCase(), b = qNm.trim().toLowerCase(); return rows.filter(r => (!a || (r.it.no || r.it.code).toLowerCase().includes(a)) && (!b || r.it.name.toLowerCase().includes(b)) && (!asset || r.it.asset === asset) && (!syn || (syn === 'syn' ? r.it.isSynth : !r.it.isSynth)) && (!only || (only === 'unset' ? r.val == null : r.val != null))); }, [rows, qNo, qNm, asset, syn, only]);
   const shown = filtered.slice(0, limit);
+  // 미설정 알림 — 이 달 미입력 품목(이전 달 값도 없는 것 먼저) + 다른 달의 미입력 개수
+  const unsetRows = useMemo(() => rows.filter(r => r.val == null).sort((a, b) => (a.prev ? 1 : 0) - (b.prev ? 1 : 0) || (a.it.no || a.it.code).localeCompare(b.it.no || b.it.code)), [rows]);
+  const neverCnt = unsetRows.filter(r => !r.prev).length;
+  const otherMonths = useMemo(() => {
+    if (!ready) return [] as { m: string; n: number }[];
+    const list = isItems ? ib!.list() : mb!.list();
+    return opts.filter(m => m !== month).map(m => {
+      let n = 0;
+      for (const it of list) { if (it.first && mIdx(it.first) > mIdx(m)) continue; const v = isItems ? ib!.value(it.code, it.isSynth ? 'syn' : 'buy', m) : mb!.value(it.code, m); if (v == null) n++; }
+      return { m, n };
+    }).filter(x => x.n > 0).sort((a, b) => b.m.localeCompare(a.m));
+  }, [ready, month, tick, opts]); // eslint-disable-line
+  const [showAllUnset, setShowAllUnset] = useState(false);
   const total = rows.length, setCnt = rows.filter(r => r.val != null).length, unsetCnt = total - setCnt;
   const withRef = rows.filter(r => r.val != null && r.ref.v > 0);
   const avgRatio = withRef.length ? Math.round(withRef.reduce((s, r) => s + (r.val! / r.ref.v), 0) / withRef.length * 1000) / 10 : null;
@@ -85,6 +98,18 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
         .ap td.n,.ap th.n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
         .ap tr.unset td:first-child{box-shadow:inset 3px 0 0 #f5b400}
         .ap .ratio{font-size:11px;color:var(--fg-3)}.ap .ratio.hi{color:#2c7f2c}.ap .ratio.lo{color:var(--neg)}
+        .ap .unset-alert{border:1px solid #f1dca5;background:#fff8e6;border-radius:12px;padding:12px 16px;display:grid;gap:8px}
+        .ap .unset-alert .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--fg-2)}
+        .ap .unset-alert .hd b{font-size:14.5px;color:#8a6200;white-space:nowrap}
+        .ap .unset-alert .chips{display:flex;gap:6px;flex-wrap:wrap}
+        .ap .unset-alert .chips button{border:1px solid #ead9a8;background:#fff;border-radius:8px;padding:3px 9px;font:600 12px var(--font-num);color:var(--fg);cursor:pointer;display:inline-flex;gap:6px;align-items:baseline;max-width:260px}
+        .ap .unset-alert .chips button small{font:400 11.5px var(--font-body);color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .ap .unset-alert .chips button.never{border-color:#e9a0a0;background:#fff5f5}
+        .ap .unset-alert .chips button.more{border-style:dashed;color:var(--brand);font-family:var(--font-body)}
+        .ap .unset-alert .chips button:hover{border-color:var(--brand)}
+        .ap .unset-alert .months{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--fg-3);border-top:1px dashed #ead9a8;padding-top:8px}
+        .ap .unset-alert .months button{border:1px solid var(--line-2);background:#fff;border-radius:999px;padding:1px 9px;font:500 12px var(--font-num);color:var(--fg-2);cursor:pointer}
+        .ap .unset-alert .months button b{color:#8a6200}
         .ap .syn{font-size:10px;padding:1px 6px;border-radius:4px;background:#eef6e0;color:#4f7a12;margin-left:6px}
         @media(max-width:1000px){.ap .verdict{grid-template-columns:1fr}.ap .verdict>div+div{border-left:0;border-top:1px solid var(--line)}}
       `}</style>
@@ -95,6 +120,27 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
           <MonthPick value={month} options={opts} onChange={m => (isItems ? ib!.setMonth(m) : mb!.setMonth(m))} label={isItems ? '기준월(입고월)' : '기준월'} />
         </div>
 
+        {(unsetRows.length > 0 || otherMonths.length > 0) && (
+          <div className="unset-alert" role="alert">
+            {unsetRows.length > 0 ? <>
+              <div className="hd">
+                <b>⚠ {ymLabel(month)} 판매가 미설정 {unsetRows.length}{isItems ? '품목' : '자재'}</b>
+                <span>{isItems ? '미설정 품목은 그 달 입고분의 구매·합성·영업 이윤이 계산되지 않습니다(부서별 수익에서 빠짐).' : '미설정 자재는 실자재투입 수익이 계산되지 않습니다.'}{neverCnt > 0 ? ` 그중 ${neverCnt}개는 이전 달에도 입력한 적이 없습니다.` : ''}</span>
+                <span className="sp" />
+                <button className="btn sm" onClick={() => { setOnly('unset'); setQNo(''); setQNm(''); setLimit(PAGE); }}>미설정만 보기</button>
+              </div>
+              <div className="chips">
+                {(showAllUnset ? unsetRows : unsetRows.slice(0, 14)).map(r => (
+                  <button key={r.it.code} className={r.prev ? '' : 'never'} title={(r.prev ? `이전 값 ${ymLabel(r.prev.m)} ${fmt(r.prev.v)}` : '이전 달에도 입력한 적 없음') + (r.ref.v ? ` · 참고가 ${fmt(r.ref.v)}` : '') + ' — 누르면 이 품목만 봅니다'} onClick={() => { setOnly(''); setQNm(''); setQNo(r.it.no || r.it.code); setLimit(PAGE); }}>{r.it.no || r.it.code}<small>{r.it.name}</small></button>
+                ))}
+                {unsetRows.length > 14 && <button className="more" onClick={() => setShowAllUnset(v => !v)}>{showAllUnset ? '접기' : `외 ${unsetRows.length - 14}개 모두 보기`}</button>}
+              </div>
+            </> : <div className="hd"><b style={{ color: '#2c7f2c' }}>✓ {ymLabel(month)} 은 모두 입력되었습니다</b></div>}
+            {otherMonths.length > 0 && (
+              <div className="months"><span>다른 달 미설정:</span>{otherMonths.slice(0, 18).map(x => <button key={x.m} onClick={() => (isItems ? ib!.setMonth(x.m) : mb!.setMonth(x.m))} title="누르면 그 달로 이동">{ymLabel(x.m)} <b>{x.n}</b></button>)}{otherMonths.length > 18 && <span>외 {otherMonths.length - 18}개월</span>}</div>
+            )}
+          </div>
+        )}
         <div className="verdict">
           <div>
             <div className="l">{ymLabel(month)} 입력 현황<HelpDot id={isItems ? 'set.items' : 'set.mats'} /></div>

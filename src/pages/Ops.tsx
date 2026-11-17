@@ -26,7 +26,7 @@ export default function Ops() {
         .opsp .monthnav input{border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:6px 8px;font:600 13.5px var(--font-num);color:var(--fg);background:transparent}
       `}</style>
       <div className="ttl">
-        <div><h1>운영 지표</h1><div className="sub">{model && !model.empty ? `${ymL(model.months[0])} ~ ${ymL(model.cur)} 기준. ` : ''}수익은 구매/판매의 실현 수익, 비용은 전표 비용입니다. 각 카드 맨 위에 결론을 먼저 적었고, (?) 를 누르면 계산 방법이 나옵니다.</div></div>
+        <div><h1>운영 지표</h1><div className="sub">{model && !model.empty ? `${ymL(model.months[0])} ~ ${ymL(model.cur)} 기준. ` : ''}판매 이익은 구매/판매의 판매금액 − 원가, 비용은 전표 비용입니다. 각 카드 맨 위에 결론을 먼저 적었고, (?) 를 누르면 계산 방법이 나옵니다.</div></div>
         <span className="sp" />
         {isAdmin && <span className="row" style={{ gap: 6 }}><button className="btn sm ghost" onClick={() => nav('/settings/cost-alloc')}>비용 배분 설정</button><button className="btn sm ghost" onClick={() => nav('/settings/fixed')}>고정비 설정</button></span>}
         <span className="monthnav" title="기준월">

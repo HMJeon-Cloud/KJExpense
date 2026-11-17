@@ -316,6 +316,13 @@ export function expandCompact(obj) {
 }
 function parseRowsText(text) { const v = JSON.parse(text); return Array.isArray(v) ? v : expandCompact(v); }
 const NO_COMPACT = { v: false }; // 0005 SQL 이 없으면 한 번 실패 후 예전 방식으로 고정
+// 없어진 부서 → 지금 부서 (기초 데이터에 옛 부서명이 남아 있으면 불러올 때 바꿔 읽음)   ※ DB 계산은 0006 의 kj_norm 이 같은 일을 함 — 둘을 같이 고칠 것
+const DEPT_ALIAS = { '운영지원팀_ATS': '보관관리_ATS' };
+const DEPT_COLS = ['DeptName', 'DEPTNAME', '부서명', '부서', 'CostCCtrName', '코스트센터'];
+function applyDeptAlias(rows) {
+  if (!Array.isArray(rows)) return;
+  for (let i = 0; i < rows.length; i++) { const r = rows[i]; if (!r) continue; for (let j = 0; j < DEPT_COLS.length; j++) { const v = r[DEPT_COLS[j]]; if (typeof v === 'string') { const t = DEPT_ALIAS[v.trim()]; if (t) { r[DEPT_COLS[j]] = t; try { Object.defineProperty(r, '__deptAlias', { value: true, enumerable: false }); } catch (e) {} } } } }   // __deptAlias: 옛 부서명에서 바꿔 읽은 줄 (인원 데이터는 지금 부서 줄이 우선)
+}
 async function fetchDatasetText(key) {
   if (!NO_COMPACT.v) {
     try { return await rpcText('dataset_rows_compact', { p_dataset: key }); }
@@ -444,6 +451,12 @@ export async function loadKeys(keys, force) {
       const rows = t.rows || parseRowsText(t.text);
       console.log('[KJHub] 파싱 ' + t.k + ' ' + Math.round(performance.now() - tp) + 'ms, ' + Math.round((t.text || '').length / 1024) + 'KB');
       KJHub.data[t.k] = Array.isArray(rows) ? rows : [];
+      applyDeptAlias(KJHub.data[t.k]);
+      if (t.k === 'headcount') { // 부서명만 바뀐 것이므로 인원을 더하지 않음: 같은 달에 지금 부서 줄이 있으면 옛 부서명 줄은 버림
+        const hk = r => String(r.DeptName || r['부서명'] || r['부서'] || '').trim() + '|' + String(r.WorkDate || r['기준월'] || r['월'] || '').replace(/[^0-9]/g, '').slice(0, 6);
+        const own = new Set(KJHub.data[t.k].filter(r => r && !r.__deptAlias).map(hk));
+        KJHub.data[t.k] = KJHub.data[t.k].filter(r => !(r && r.__deptAlias && own.has(hk(r))));
+      }
       if (t.k === 'voucher') { // DB 집계가 함께 왔으면 보관, 아니면(예전 방식) 집계 없음 → 화면 코드가 원본으로 계산
         try { KJHub.agg.voucher = t.agg ? JSON.parse(t.agg) : null; } catch (e) { KJHub.agg.voucher = null; }
         if (KJHub.agg.voucher) console.log('[KJHub] voucher DB 집계 ' + KJHub.agg.voucher.length + '행 · 원본 ' + KJHub.data[t.k].length + '건(' + voucherRange().from + '~)');

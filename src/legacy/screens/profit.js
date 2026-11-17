@@ -762,9 +762,13 @@ export default function init() {
       if (ym.length < 6) continue;
       const rec = { emp: num(r['EmpCnt']), in: num(r['InEmpCnt']), out: num(r['OutEmpCnt']) };
       const k = norm(dept);
-      (byDept[k] = byDept[k] || {})[ym] = rec;
-      if (!latest[k] || ym > latest[k].ym) latest[k] = Object.assign({ ym: ym }, rec);
+      // 부서명이 바뀐 경우(옛 부서명 줄 = __deptAlias): 인원을 더하지 않음 — 지금 부서 줄이 있으면 그 값만, 없는 달에만 옛 부서명 줄을 씀
+      const cur = (byDept[k] = byDept[k] || {})[ym];
+      if (cur && r.__deptAlias) continue;
+      rec.__alias = !!r.__deptAlias;
+      byDept[k][ym] = rec;
     }
+    for (const k in byDept) for (const ym in byDept[k]) { if (!latest[k] || ym > latest[k].ym) latest[k] = Object.assign({ ym: ym }, byDept[k][ym]); }
     _hcCache = { byDept: byDept, latest: latest };
     _hcSrc = rows;
     return _hcCache;
