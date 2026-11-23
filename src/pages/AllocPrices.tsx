@@ -75,7 +75,7 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
   const pct = !ready ? { buy: 0, syn: 0 } : isItems ? ib!.defaultPct() : { buy: mb!.defaultPct(), syn: 0 };
   const setPct = (k: 'buy' | 'syn', v: number) => (isItems ? ib!.setDefaultPct(k, v) : mb!.setDefaultPct(v));
   const setVal = (r: typeof rows[0], v: number | null) => (isItems ? ib!.setValue(r.it.code, r.editable, v) : mb!.setValue(r.it.code, v));
-  const title = isItems ? '배분 비율 설정(품목)' : '배분 비율 설정(원자재)';
+  const title = isItems ? '품목 판매가' : '자재 판매가';
 
   if (!ready) return <div className="page"><div className="card"><div className="empty"><span className="spinner" /> 설정 모듈을 준비하는 중입니다.</div></div></div>;
   return (
@@ -96,11 +96,11 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
         .ap td{padding:4px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
         .ap td.nm{max-width:260px;overflow:hidden;text-overflow:ellipsis}
         .ap td.n,.ap th.n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
-        .ap tr.unset td:first-child{box-shadow:inset 3px 0 0 #f5b400}
-        .ap .ratio{font-size:11px;color:var(--fg-3)}.ap .ratio.hi{color:#2c7f2c}.ap .ratio.lo{color:var(--neg)}
+        .ap tr.unset td:first-child{box-shadow:inset 3px 0 0 #f5b301}
+        .ap .ratio{font-size:11px;color:var(--fg-3)}.ap .ratio.hi{color:#167a3a}.ap .ratio.lo{color:var(--neg)}
         .ap .unset-alert{border:1px solid #f1dca5;background:#fff8e6;border-radius:12px;padding:12px 16px;display:grid;gap:8px}
         .ap .unset-alert .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--fg-2)}
-        .ap .unset-alert .hd b{font-size:14.5px;color:#8a6200;white-space:nowrap}
+        .ap .unset-alert .hd b{font-size:14.5px;color:#8d6100;white-space:nowrap}
         .ap .unset-alert .chips{display:flex;gap:6px;flex-wrap:wrap}
         .ap .unset-alert .chips button{border:1px solid #ead9a8;background:#fff;border-radius:8px;padding:3px 9px;font:600 12px var(--font-num);color:var(--fg);cursor:pointer;display:inline-flex;gap:6px;align-items:baseline;max-width:260px}
         .ap .unset-alert .chips button small{font:400 11.5px var(--font-body);color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -109,13 +109,13 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
         .ap .unset-alert .chips button:hover{border-color:var(--brand)}
         .ap .unset-alert .months{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--fg-3);border-top:1px dashed #ead9a8;padding-top:8px}
         .ap .unset-alert .months button{border:1px solid var(--line-2);background:#fff;border-radius:999px;padding:1px 9px;font:500 12px var(--font-num);color:var(--fg-2);cursor:pointer}
-        .ap .unset-alert .months button b{color:#8a6200}
+        .ap .unset-alert .months button b{color:#8d6100}
         .ap .syn{font-size:10px;padding:1px 6px;border-radius:4px;background:#eef6e0;color:#4f7a12;margin-left:6px}
         @media(max-width:1000px){.ap .verdict{grid-template-columns:1fr}.ap .verdict>div+div{border-left:0;border-top:1px solid var(--line)}}
       `}</style>
       <div className="ap" style={{ display: 'grid', gap: 16 }}>
         <div className="page-head" style={{ alignItems: 'flex-end' }}>
-          <div><h1>{title}</h1><div className="help">{isItems ? '품목별 판매가(구매)·판매가(합성)를 금액(원)으로 기준월(입고월)별로 정합니다. 합성 품목은 판매가(합성)만, 그 외는 판매가(구매)만 입력합니다.' : '실자재투입내역의 원료·자재별 판매가(구매)를 금액(원)으로 기준월별로 정합니다. 실자재투입 수익 계산에 쓰입니다.'}</div></div>
+          <div><h1>{title}</h1><div className="help">{isItems ? '품목별 판매가(구매) · 판매가(합성)를 입고월별 금액으로 정합니다. 합성 품목은 판매가(합성)만, 그 밖은 판매가(구매)만 넣습니다.' : '합성 제품에 들어가는 자재의 판매가(구매)를 월별 금액으로 정합니다. 자재 투입의 구매 이익 계산에 씁니다.'}</div></div>
           <span className="sp" />
           <MonthPick value={month} options={opts} onChange={m => (isItems ? ib!.setMonth(m) : mb!.setMonth(m))} label={isItems ? '기준월(입고월)' : '기준월'} />
         </div>
@@ -124,83 +124,83 @@ export default function AllocPrices({ kind }: { kind: 'items' | 'mats' }) {
           <div className="unset-alert" role="alert">
             {unsetRows.length > 0 ? <>
               <div className="hd">
-                <b>⚠ {ymLabel(month)} 판매가 미설정 {unsetRows.length}{isItems ? '품목' : '자재'}</b>
-                <span>{isItems ? '미설정 품목은 그 달 입고분의 구매·합성·영업 이윤이 계산되지 않습니다(부서별 수익에서 빠짐).' : '미설정 자재는 실자재투입 수익이 계산되지 않습니다.'}{neverCnt > 0 ? ` 그중 ${neverCnt}개는 이전 달에도 입력한 적이 없습니다.` : ''}</span>
+                <b>{ymLabel(month)} 판매가가 없는 {isItems ? '품목' : '자재'} {unsetRows.length}개</b>
+                <span>{isItems ? '판매가가 없으면 그 달 입고분의 단계 이익을 계산하지 않아 부서 배분 이익에서 빠집니다.' : '판매가가 없으면 자재 투입의 구매 이익을 계산하지 않습니다.'}{neverCnt > 0 ? ` 그중 ${neverCnt}개는 한 번도 입력한 적이 없습니다.` : ''}</span>
                 <span className="sp" />
-                <button className="btn sm" onClick={() => { setOnly('unset'); setQNo(''); setQNm(''); setLimit(PAGE); }}>미설정만 보기</button>
+                <button className="btn sm" onClick={() => { setOnly('unset'); setQNo(''); setQNm(''); setLimit(PAGE); }}>없는 것만 보기</button>
               </div>
               <div className="chips">
                 {(showAllUnset ? unsetRows : unsetRows.slice(0, 14)).map(r => (
-                  <button key={r.it.code} className={r.prev ? '' : 'never'} title={(r.prev ? `이전 값 ${ymLabel(r.prev.m)} ${fmt(r.prev.v)}` : '이전 달에도 입력한 적 없음') + (r.ref.v ? ` · 참고가 ${fmt(r.ref.v)}` : '') + ' — 누르면 이 품목만 봅니다'} onClick={() => { setOnly(''); setQNm(''); setQNo(r.it.no || r.it.code); setLimit(PAGE); }}>{r.it.no || r.it.code}<small>{r.it.name}</small></button>
+                  <button key={r.it.code} className={r.prev ? '' : 'never'} title={(r.prev ? `이전 값 ${ymLabel(r.prev.m)} ${fmt(r.prev.v)}` : '한 번도 입력한 적 없음') + (r.ref.v ? ` · 참고 판매가 ${fmt(r.ref.v)}` : '') + ' · 누르면 이 항목만 봅니다'} onClick={() => { setOnly(''); setQNm(''); setQNo(r.it.no || r.it.code); setLimit(PAGE); }}>{r.it.no || r.it.code}<small>{r.it.name}</small></button>
                 ))}
-                {unsetRows.length > 14 && <button className="more" onClick={() => setShowAllUnset(v => !v)}>{showAllUnset ? '접기' : `외 ${unsetRows.length - 14}개 모두 보기`}</button>}
+                {unsetRows.length > 14 && <button className="more" onClick={() => setShowAllUnset(v => !v)}>{showAllUnset ? '접기' : `나머지 ${unsetRows.length - 14}개 보기`}</button>}
               </div>
-            </> : <div className="hd"><b style={{ color: '#2c7f2c' }}>✓ {ymLabel(month)} 은 모두 입력되었습니다</b></div>}
+            </> : <div className="hd"><b style={{ color: 'var(--green-2)' }}>{ymLabel(month)}은 모두 입력했습니다</b></div>}
             {otherMonths.length > 0 && (
-              <div className="months"><span>다른 달 미설정:</span>{otherMonths.slice(0, 18).map(x => <button key={x.m} onClick={() => (isItems ? ib!.setMonth(x.m) : mb!.setMonth(x.m))} title="누르면 그 달로 이동">{ymLabel(x.m)} <b>{x.n}</b></button>)}{otherMonths.length > 18 && <span>외 {otherMonths.length - 18}개월</span>}</div>
+              <div className="months"><span>다른 달에 빈 것</span>{otherMonths.slice(0, 18).map(x => <button key={x.m} onClick={() => (isItems ? ib!.setMonth(x.m) : mb!.setMonth(x.m))} title="누르면 그 달로 갑니다">{ymLabel(x.m)} <b>{x.n}</b></button>)}{otherMonths.length > 18 && <span>외 {otherMonths.length - 18}개월</span>}</div>
             )}
           </div>
         )}
         <div className="verdict">
           <div>
             <div className="l">{ymLabel(month)} 입력 현황<HelpDot id={isItems ? 'set.items' : 'set.mats'} /></div>
-            <div className="big" style={{ color: unsetCnt ? '#9a6f00' : '#2c7f2c' }}>{setCnt}<span style={{ fontSize: 16, color: 'var(--fg-3)', fontWeight: 600 }}> / {total}{isItems ? '품목' : '자재'} 입력됨</span></div>
-            <div className="prog"><i style={{ width: (total ? setCnt / total * 100 : 0) + '%', background: '#3aa63a' }} /><i style={{ width: (total ? unsetCnt / total * 100 : 0) + '%', background: '#f5b400' }} /></div>
+            <div className="big" style={{ color: unsetCnt ? '#8d6100' : '#167a3a' }}>{setCnt}<span style={{ fontSize: 16, color: 'var(--fg-3)', fontWeight: 600 }}> / {total}{isItems ? '품목' : '자재'} 입력</span></div>
+            <div className="prog"><i style={{ width: (total ? setCnt / total * 100 : 0) + '%', background: '#1f9d4d' }} /><i style={{ width: (total ? unsetCnt / total * 100 : 0) + '%', background: '#f5b301' }} /></div>
             <div className="facts">
-              <div>미입력<b style={{ color: unsetCnt ? '#9a6f00' : undefined, cursor: 'pointer' }} onClick={() => setOnly(only === 'unset' ? '' : 'unset')}>{unsetCnt}</b></div>
-              <div>참고가 대비 평균<b>{avgRatio == null ? '-' : avgRatio + '%'}</b></div>
+              <div>비어 있음<b style={{ color: unsetCnt ? '#8d6100' : undefined, cursor: 'pointer' }} onClick={() => setOnly(only === 'unset' ? '' : 'unset')}>{unsetCnt}</b></div>
+              <div>참고 판매가 대비 평균<b>{avgRatio == null ? '-' : avgRatio + '%'}</b></div>
               <div>입력 금액 합계<b>{kor(sumVal)}</b></div>
             </div>
-            {bySrc > 0 && <div className="help" style={{ marginTop: 8, color: '#9a6f00' }}>참고가에 (년월) 표시는 직전 3개월 거래가 없어 이전 금액을 승계한 것입니다.</div>}
+            {bySrc > 0 && <div className="help" style={{ marginTop: 8, color: '#8d6100' }}>참고 판매가 옆 (년-월)은 직전 3개월 거래가 없어 그 달 금액을 가져온 것입니다.</div>}
           </div>
           <div>
-            <div className="l">일괄 채우기<HelpDot id={isItems ? 'set.items' : 'set.mats'} /> <span>참고 판매가 × (1 + 비율%) 로 값을 채우고 바로 저장합니다</span></div>
+            <div className="l">한꺼번에 채우기<HelpDot id={isItems ? 'set.items' : 'set.mats'} /> <span>참고 판매가 × (1 + 비율%)로 채우고 바로 저장합니다</span></div>
             <div className="tools" style={{ marginTop: 8 }}>
               <div className="tr">
                 <span>비율(%)</span><span className="help">구매</span><NumCell value={pct.buy} onCommit={v => setPct('buy', v ?? 0)} width={70} />
                 {isItems && <><span className="help">합성</span><NumCell value={pct.syn} onCommit={v => setPct('syn', v ?? 0)} width={70} /></>}
-                <span className="help">— 입력 비율은 아래 단추로 값을 채울 때만 쓰입니다.</span>
+                <span className="help">아래 단추로 채울 때만 쓰는 비율입니다.</span>
               </div>
               <div className="tr">
-                <button className="btn sm" onClick={() => (isItems ? ib!.applyView(filtered.map(r => r.it.code)) : mb!.applyView(filtered.map(r => r.it.code)))} disabled={!filtered.length}>조회된 {filtered.length}개 × {ymLabel(month)} 적용</button>
-                <button className="btn sm" onClick={() => (isItems ? ib!.applyMonthAll() : mb!.applyMonthAll())}>전체 × {ymLabel(month)} 적용</button>
-                <button className="btn sm" onClick={async () => { if (await confirm('전체 일괄 적용', `전체 ${isItems ? '품목' : '자재'}의 모든 기준월에 기본값을 적용하고 저장합니다. 기존에 입력한 값도 덮어씁니다.`, { okText: '적용하고 저장' })) (isItems ? ib!.applyEvery() : mb!.applyEvery()); }}>전체 × 모든 월 적용</button>
-                <button className="btn sm" onClick={() => (isItems ? ib!.prevMonth() : mb!.prevMonth())} title="기준월 이전에 입력된 값 중 가장 최근 월의 값을 이 달로 복사하고 저장">이전 달 값 복사</button>
+                <button className="btn sm" onClick={() => (isItems ? ib!.applyView(filtered.map(r => r.it.code)) : mb!.applyView(filtered.map(r => r.it.code)))} disabled={!filtered.length}>지금 보이는 {filtered.length}개 채우기</button>
+                <button className="btn sm" onClick={() => (isItems ? ib!.applyMonthAll() : mb!.applyMonthAll())}>{ymLabel(month)} 전체 채우기</button>
+                <button className="btn sm" onClick={async () => { if (await confirm('모든 달 전체 채우기', `모든 ${isItems ? '품목' : '자재'}의 모든 달을 참고 판매가 × (1 + 비율%)로 채우고 저장합니다. 이미 입력한 값도 바뀝니다.`, { okText: '채우고 저장' })) (isItems ? ib!.applyEvery() : mb!.applyEvery()); }}>모든 달 전체 채우기</button>
+                <button className="btn sm" onClick={() => (isItems ? ib!.prevMonth() : mb!.prevMonth())} title="기준월보다 앞선 달 중 가장 최근에 입력한 값을 이 달로 가져와 저장합니다">이전 달 값 가져오기</button>
               </div>
             </div>
           </div>
         </div>
 
         <div className="fbar">
-          <input className="inp" style={{ width: 130 }} placeholder={isItems ? '품번' : '자재코드'} value={qNo} onChange={e => { setQNo(e.target.value); setLimit(PAGE); }} />
+          <input className="inp" style={{ width: 130 }} placeholder={isItems ? '품번' : '자재 품번'} value={qNo} onChange={e => { setQNo(e.target.value); setLimit(PAGE); }} />
           <input className="inp" style={{ width: 160 }} placeholder={isItems ? '품목명' : '자재명'} value={qNm} onChange={e => { setQNm(e.target.value); setLimit(PAGE); }} />
-          <select className="inp" value={asset} onChange={e => { setAsset(e.target.value); setLimit(PAGE); }}><option value="">자산분류 전체</option>{assets.map(a => <option key={a} value={a}>{a}</option>)}</select>
-          {isItems && <select className="inp" value={syn} onChange={e => { setSyn(e.target.value); setLimit(PAGE); }}><option value="">합성 전체</option><option value="non">비합성 품목</option><option value="syn">합성 품목</option></select>}
-          <span className="seg"><button className={only === '' ? 'on' : ''} onClick={() => setOnly('')}>전체</button><button className={only === 'unset' ? 'on' : ''} onClick={() => setOnly('unset')}>미입력만</button><button className={only === 'set' ? 'on' : ''} onClick={() => setOnly('set')}>입력됨만</button></span>
+          <select className="inp" value={asset} onChange={e => { setAsset(e.target.value); setLimit(PAGE); }}><option value="">자산 분류 전체</option>{assets.map(a => <option key={a} value={a}>{a}</option>)}</select>
+          {isItems && <select className="inp" value={syn} onChange={e => { setSyn(e.target.value); setLimit(PAGE); }}><option value="">합성 전체</option><option value="non">합성 아님</option><option value="syn">합성 품목</option></select>}
+          <span className="seg"><button className={only === '' ? 'on' : ''} onClick={() => setOnly('')}>전체</button><button className={only === 'unset' ? 'on' : ''} onClick={() => setOnly('unset')}>빈 것만</button><button className={only === 'set' ? 'on' : ''} onClick={() => setOnly('set')}>입력한 것만</button></span>
           <span className="sp" />
-          <span className="help">조회 {fmt(filtered.length)} / 전체 {fmt(total)}{rows.length !== (isItems ? ib!.list().length : mb!.list().length) ? ` · 최초 입고월 이후만 표시` : ''}</span>
+          <span className="help">조회 {fmt(filtered.length)} / 전체 {fmt(total)}{rows.length !== (isItems ? ib!.list().length : mb!.list().length) ? ` · 첫 입고월 이후만` : ''}</span>
         </div>
 
         <div className="card">
           <div className="tbl-wrap" style={{ maxHeight: '70vh', overflow: 'auto' }}><table>
-            <thead><tr><th style={{ width: 120 }}>{isItems ? '품목코드' : '자재코드'}</th><th>{isItems ? '품목명' : '자재명'}</th><th style={{ width: 110 }}>자산분류</th><th className="n" style={{ width: 130 }}>참고 판매가</th><th className="n" style={{ width: 130 }}>{isItems ? '판매가(구매)' : '판매가(구매)'}</th>{isItems && <th className="n" style={{ width: 130 }}>판매가(합성)</th>}<th className="n" style={{ width: 90 }}>참고 대비</th><th className="n" style={{ width: 130 }}>이전 입력값</th></tr></thead>
+            <thead><tr><th style={{ width: 120 }}>{isItems ? '품번' : '자재 품번'}</th><th>{isItems ? '품목명' : '자재명'}</th><th style={{ width: 110 }}>자산 분류</th><th className="n" style={{ width: 130 }}>참고 판매가</th><th className="n" style={{ width: 130 }}>{isItems ? '판매가(구매)' : '판매가(구매)'}</th>{isItems && <th className="n" style={{ width: 130 }}>판매가(합성)</th>}<th className="n" style={{ width: 90 }}>참고 대비</th><th className="n" style={{ width: 130 }}>이전 입력값</th></tr></thead>
             <tbody>
               {shown.map(r => { const ratio = r.val != null && r.ref.v > 0 ? Math.round(r.val / r.ref.v * 1000) / 10 : null; return (
                 <tr key={r.it.code} className={r.val == null ? 'unset' : ''}>
                   <td style={{ fontWeight: 600 }}>{r.it.no || r.it.code}{r.it.src && <span className="help" style={{ marginLeft: 4, fontSize: 10 }}>{r.it.src}</span>}</td>
                   <td className="nm" title={r.it.name}>{r.it.name || '-'}{r.it.isSynth && <span className="syn">합성</span>}</td>
                   <td className="help">{r.it.asset || '-'}</td>
-                  <td className="n" style={{ color: r.ref.v ? undefined : 'var(--fg-3)' }} title={r.ref.src ? `직전 3개월 데이터 없음 → ${ymLabel(r.ref.src)} 금액 승계` : '기준월 직전 3개월 수량가중평균'}>{fmt(r.ref.v)}{r.ref.src && <span style={{ fontSize: 10, color: '#9a6f00', marginLeft: 3 }}>({ymLabel(r.ref.src)})</span>}</td>
+                  <td className="n" style={{ color: r.ref.v ? undefined : 'var(--fg-3)' }} title={r.ref.src ? `직전 3개월 거래가 없어 ${ymLabel(r.ref.src)} 금액을 가져옴` : '기준월 직전 3개월 평균(수량 가중)'}>{fmt(r.ref.v)}{r.ref.src && <span style={{ fontSize: 10, color: '#8d6100', marginLeft: 3 }}>({ymLabel(r.ref.src)})</span>}</td>
                   <td className="n">{r.editable === 'buy' ? <NumCell value={r.buy} onCommit={v => setVal(r, v)} placeholder="0" width={110} /> : <span className="help" title="합성 품목은 판매가(구매)를 쓰지 않습니다">0</span>}</td>
                   {isItems && <td className="n">{r.editable === 'syn' ? <NumCell value={r.synV} onCommit={v => setVal(r, v)} placeholder="0" width={110} /> : <span className="help" title="합성 대상이 아닌 품목">0</span>}</td>}
                   <td className={'n ratio ' + (ratio == null ? '' : ratio >= 100 ? 'hi' : 'lo')}>{ratio == null ? '-' : ratio + '%'}</td>
                   <td className="n help" title={r.prev ? ymLabel(r.prev.m) + ' 입력값' : ''}>{r.prev ? <>{fmt(r.prev.v)} <span style={{ fontSize: 10 }}>({ymLabel(r.prev.m)})</span></> : '-'}</td>
                 </tr>); })}
-              {!shown.length && <tr><td colSpan={isItems ? 8 : 7} className="empty">{total ? '조건에 맞는 항목이 없습니다.' : (isItems ? '구매·판매 데이터에서 품목을 찾지 못했습니다.' : '실자재투입내역 데이터가 없습니다.')}</td></tr>}
+              {!shown.length && <tr><td colSpan={isItems ? 8 : 7} className="empty">{total ? '조건에 맞는 항목이 없습니다.' : (isItems ? '구매 · 판매 데이터에 품목이 없습니다.' : '자재 투입 데이터가 없습니다.')}</td></tr>}
             </tbody>
           </table></div>
-          {filtered.length > shown.length && <div style={{ textAlign: 'center', padding: 8 }}><button className="btn sm" onClick={() => setLimit(l => l + PAGE)}>더 보기 ({fmt(filtered.length - shown.length)}개 남음)</button> <button className="btn sm ghost" onClick={() => setLimit(Infinity)}>전체 보기</button></div>}
-          <p className="help" style={{ padding: '6px 14px' }}>노란 테두리 행은 이 달 값이 없는 항목입니다(수익 계산 시 0). 값을 입력하고 Enter를 누르면 다음 칸으로 넘어갑니다. 저장은 {ymLabel(month)} 값만 바꾸고 다른 달은 건드리지 않습니다.</p>
+          {filtered.length > shown.length && <div style={{ textAlign: 'center', padding: 8 }}><button className="btn sm" onClick={() => setLimit(l => l + PAGE)}>{fmt(filtered.length - shown.length)}개 더 보기</button> <button className="btn sm ghost" onClick={() => setLimit(Infinity)}>전체 보기</button></div>}
+          <p className="help" style={{ padding: '6px 14px' }}>노란 줄은 이 달 값이 없는 항목입니다. 값을 넣고 Enter를 누르면 다음 칸으로 갑니다. 저장은 {ymLabel(month)} 값만 바꿉니다.</p>
         </div>
 
         <SaveBar dirty={dirty} saving={saving} msg={msg} onSave={() => (isItems ? ib!.save() : mb!.save())} onRevert={() => (isItems ? ib!.revert() : mb!.revert())} saveLabel={`${ymLabel(month)} 저장`} />

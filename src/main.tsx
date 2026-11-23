@@ -2,14 +2,16 @@ import Ops from './pages/Ops';
 import CostAllocSettings from './pages/CostAllocSettings';
 import PlSettings from './pages/PlSettings';
 import Guide from './pages/Guide';
+import Home from './pages/Home';
 import FixedCostSettings from './pages/FixedCostSettings';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import './styles/app.css';
 import { AuthProvider, useAuth } from './lib/auth';
 import { UIProvider } from './components/ui';
-import Layout from './components/Layout';
+import Layout, { homePath } from './components/Layout';
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
 import Upload from './pages/Upload';
@@ -35,22 +37,24 @@ function Gate() {
   if (loading) return <div className="empty"><span className="spinner" /></div>;
   if (!session) return <Login />;
   if (!employee) return (
-    <div className="page"><div className="card"><div className="empty">로그인은 됐지만 사원 정보가 없습니다. 관리자에게 사원 등록을 요청하세요.<br /><button className="btn" style={{ marginTop: 12 }} onClick={() => location.reload()}>다시 시도</button></div></div></div>
+    <div className="page"><div className="card"><div className="empty">로그인은 됐지만 사원 정보가 없습니다. 관리자에게 사원 등록을 요청해 주세요.<br /><button className="btn" style={{ marginTop: 12 }} onClick={() => location.reload()}>다시 시도</button></div></div></div>
   );
   if (employee.must_change_pw) return <ChangePassword forced />;
   const isAdmin = employee.role === 'admin';
+  const privileged = isAdmin || employee.role === 'all';
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to={isAdmin ? '/bu' : '/dept'} replace />} />
+        <Route index element={<Navigate to={homePath(employee)} replace />} />
+        <Route path="/home" element={privileged ? <Home /> : <Navigate to="/" />} />
         <Route path="/settings/upload" element={isAdmin ? <Upload /> : <Navigate to="/" />} />
         <Route path="/settings/employees" element={isAdmin ? <Employees /> : <Navigate to="/" />} />
         <Route path="/settings/history" element={isAdmin ? <History /> : <Navigate to="/" />} />
         <Route path="/settings/verify" element={isAdmin ? <Verify /> : <Navigate to="/" />} />
         <Route path="/password" element={<ChangePassword />} />
-        <Route path="/bu" element={<BuDashboard variant="" title="국전 수익/비용" />} />
-        <Route path="/bu-real" element={<BuDashboard variant="-real" title="국전 수익/비용 (실현 수익)" />} />
-        <Route path="/bu-unit" element={<BuDashboard variant="-my" title="사업단위 수익/비용" />} />
+        <Route path="/bu" element={<BuDashboard variant="" title="본부 성과" />} />
+        <Route path="/bu-real" element={<BuDashboard variant="-real" title="손익 현황" />} />
+        <Route path="/bu-unit" element={<BuDashboard variant="-my" title="본부 손익" />} />
         <Route path="/dept" element={<DeptDashboard />} />
         <Route path="/ops" element={<Ops />} />
         <Route path="/dept-cost" element={<DeptCost />} />

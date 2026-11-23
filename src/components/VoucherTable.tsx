@@ -1,9 +1,10 @@
-// 전표 상세 표 — 부서별 비용 화면과 부서별 수익/비용 상세에서 함께 사용
+// 전표 표 — 비용 내역 화면과 부서 손익 화면에서 함께 사용
 //   계정별 묶음(접기/펼치기) · 키워드 칩 · 검색 · 정렬 · CSV 내보내기
 import { accL } from '../lib/acc';
 import { useEffect, useMemo, useState } from 'react';
 import { fmt } from './ui';
 import { kor } from './charts';
+import { useData } from '../lib/useData';
 import { parseVouchers, keywordsByAccount, rowKeywords, toCsv, type Voucher, type VRow } from '../lib/vouchers';
 
 export type VoucherFilter = { depts?: string[] | null; months: string[]; acc?: string; q?: string };
@@ -12,9 +13,9 @@ const dL = (d: string) => (d.length >= 8 ? d.slice(0, 4) + '-' + d.slice(4, 6) +
 const KJ = () => (window as unknown as { KJHub?: { data?: { voucher?: VRow[] } } }).KJHub;
 
 export default function VoucherTable({ filter, compact, onAccPick }: { filter: VoucherFilter; compact?: boolean; onAccPick?: (acc: string) => void }) {
-  const [tick, setTick] = useState(0);
-  useEffect(() => { const h = () => setTick(t => t + 1); window.addEventListener('kjhub:data', h); return () => window.removeEventListener('kjhub:data', h); }, []);
-  const all = useMemo(() => parseVouchers(KJ()?.data?.voucher), [tick]); // eslint-disable-line
+  const { ver: tick } = useData(['voucher']);
+  const nV = KJ()?.data?.voucher?.length ?? -1;   // 이전 달 전표를 더 받으면 길이가 달라짐
+  const all = useMemo(() => parseVouchers(KJ()?.data?.voucher), [tick, nV]); // eslint-disable-line
   const [q, setQ] = useState(filter.q ?? '');
   const [acc, setAcc] = useState(filter.acc ?? '');
   const [kwSel, setKwSel] = useState('');
@@ -53,29 +54,31 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
     <div className="vt">
       <style>{`
         .vt .vtbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-        .vt .kws{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-        .vt table{width:100%;border-collapse:collapse;font-size:12.5px}
-        .vt th{text-align:left;color:var(--fg-3);font-weight:500;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-        .vt td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-        .vt td.num,.vt th.num{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;white-space:nowrap}
-        .vt tr.grp td{background:var(--surface-2);font-weight:700;cursor:pointer;padding-block:7px}
-        .vt tr.grp:hover td{background:color-mix(in srgb,var(--surface-2) 60%,var(--brand-soft))}
+        .vt .kws{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+        .vt table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+        .vt th{text-align:left;color:var(--fg-3);font-weight:600;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2);position:sticky;top:0;z-index:1}
+        .vt td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+        .vt td.num,.vt th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .vt tr.grp td{background:color-mix(in srgb,var(--surface-2) 70%,var(--surface));font-weight:700;cursor:pointer;padding-block:8px}
+        .vt tr.grp:hover td{background:var(--blue-soft)}
         .vt .desc{color:var(--fg-2);word-break:break-all}
-        .vt .kw{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:4px;background:var(--brand-soft);color:var(--brand);margin-left:4px;cursor:pointer}
-        .vt .kw.on{background:var(--brand);color:#fff}
-        .vt .neg{color:var(--neg)}
+        .vt .kw{display:inline-block;font-size:11.5px;font-weight:500;padding:1px 8px;border-radius:999px;background:var(--surface-3);color:var(--fg-2);margin-left:5px;cursor:pointer}
+        .vt .kw:hover{background:var(--blue-soft);color:var(--blue-2)}
+        .vt .kw.on{background:var(--blue);color:#fff}
+        .vt .neg{color:var(--red-2)}
+        @media(max-width:820px){.vt .vtbar .inp{flex:1;min-width:0;width:auto!important}}
       `}</style>
       <div className="vtbar">
-        <input className="inp" style={{ width: 220 }} placeholder="적요·계정·부서 검색" value={q} onChange={e => setQ(e.target.value)} />
+        <input className="inp" style={{ width: 220 }} placeholder="적요 · 계정 · 부서 검색" value={q} onChange={e => setQ(e.target.value)} />
         <select className="inp" value={acc} onChange={e => { setAcc(e.target.value); onAccPick?.(e.target.value); }}>
           <option value="">계정 전체</option>{accTotals.map(([a, v]) => <option key={a} value={a}>{accL(a)} ({kor(v)})</option>)}
         </select>
         <span className="seg"><button className={sort === 'date' ? 'on' : ''} onClick={() => setSort('date')}>날짜순</button><button className={sort === 'amt' ? 'on' : ''} onClick={() => setSort('amt')}>금액순</button></span>
         <span className="sp" />
-        <span className="help">{fmt(rows.length)}건 · 합계 <b className="num" style={{ color: 'var(--fg)' }}>{fmt(total)}</b>원</span>
-        <button className="btn sm" onClick={download} disabled={!rows.length}>CSV 내려받기</button>
+        <span className="help">{fmt(rows.length)}건 · 합계 <b className="num" style={{ color: 'var(--fg)', fontSize: 13.5 }}>{fmt(total)}</b></span>
+        <button className="btn sm" onClick={download} disabled={!rows.length}>엑셀(CSV)로 받기</button>
       </div>
-      {kwAll.length > 0 && <div className="kws"><span className="help">키워드</span>{kwAll.map(k => <span key={k} className={'kw' + (kwSel === k ? ' on' : '')} style={{ fontSize: 11.5, padding: '3px 9px' }} onClick={() => setKwSel(s => (s === k ? '' : k))}>{k}</span>)}</div>}
+      {kwAll.length > 0 && <div className="kws"><span className="help">자주 나오는 말</span>{kwAll.map(k => <span key={k} className={'kw' + (kwSel === k ? ' on' : '')} style={{ padding: '3px 10px', marginLeft: 0 }} onClick={() => setKwSel(s => (s === k ? '' : k))}>{k}</span>)}</div>}
       <div className="tbl-wrap" style={{ maxHeight: compact ? 480 : undefined, overflowY: compact ? 'auto' : undefined }}>
         <table>
           <thead><tr><th style={{ width: 92 }}>회계일</th>{!filter.depts || filter.depts.length !== 1 ? <th style={{ width: 120 }}>부서</th> : null}<th>적요</th><th style={{ width: 90 }}>구분</th><th className="num" style={{ width: 120 }}>금액</th></tr></thead>
@@ -100,8 +103,8 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
           </tbody>
         </table>
       </div>
-      {shown >= limit && <div style={{ textAlign: 'center', padding: 8 }}><button className="btn sm" onClick={() => setLimit(l => l + 500)}>더 보기 ({fmt(rows.length - shown)}건 남음)</button></div>}
-      <p className="help" style={{ marginTop: 6 }}>{filter.months.length === 1 ? ymL(filter.months[0]) : `${ymL(filter.months[0])} ~ ${ymL(filter.months[filter.months.length - 1])}`} 전표{filter.depts?.length ? ` · ${filter.depts.join(', ')}` : ''}. 계정 행을 누르면 접거나 펼칩니다. 키워드는 적요에서 자동으로 뽑은 말입니다.</p>
+      {shown >= limit && <div style={{ textAlign: 'center', padding: 8 }}><button className="btn sm" onClick={() => setLimit(l => l + 500)}>{fmt(rows.length - shown)}건 더 보기</button></div>}
+      <p className="help" style={{ marginTop: 6 }}>{filter.months.length === 1 ? ymL(filter.months[0]) : `${ymL(filter.months[0])} ~ ${ymL(filter.months[filter.months.length - 1])}`} 전표{filter.depts?.length ? ` · ${filter.depts.length > 3 ? filter.depts.slice(0, 3).join(', ') + ` 외 ${filter.depts.length - 3}곳` : filter.depts.join(', ')}` : ''}. 계정 줄을 누르면 접거나 펼칩니다.</p>
     </div>
   );
 }

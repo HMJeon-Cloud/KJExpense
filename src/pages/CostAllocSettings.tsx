@@ -82,14 +82,14 @@ export default function CostAllocSettings() {
     const bad = Object.keys(clean(draft)).filter(k => sumOf(k) > 100.0001);
     if (bad.length) { setSaving(false); return setMsg({ text: '비율 합이 100%를 넘는 줄이 있습니다: ' + bad.map(k => k.replace(/^(hq|dept):/, '')).join(', '), cls: 'neg' }); }
     const next: CostAllocCfg = { byMonth: { ...(cfg?.byMonth || {}), [month]: sortR(clean(draft)) } };
-    const { error } = await supabase.rpc('save_config', { p_key: 'costAlloc', p_value: next, p_summary: `비용 배분 설정 ${ymL(month)}` });
+    const { error } = await supabase.rpc('save_config', { p_key: 'costAlloc', p_value: next, p_summary: `본부 비용 배분 ${ymL(month)}` });
     setSaving(false);
     if (error) return setMsg({ text: error.message, cls: 'neg' });
-    setCfg(next); setMsg({ text: `${ymL(month)} 비율을 저장했습니다. 이후 달은 새로 저장하기 전까지 이 비율을 이어서 씁니다.`, cls: 'pos' });
+    setCfg(next); setMsg({ text: `${ymL(month)} 비율을 저장했습니다. 다음 달부터도 새로 저장하기 전까지 이 비율을 씁니다.`, cls: 'pos' });
     await loadCostAlloc(true); window.dispatchEvent(new CustomEvent('kjhub:costallocsaved'));
   };
 
-  const status = at.src === month ? '이 달 설정' : at.src ? (at.src > month ? `${ymL(at.src)} 설정 사용 중 (이 달 이전 설정 없음)` : `${ymL(at.src)} 설정 승계 중`) : '기본 규칙 (아직 저장한 적 없음)';
+  const status = at.src === month ? '이 달 설정' : at.src ? (at.src > month ? `${ymL(at.src)} 설정을 씀 (이 달보다 앞선 설정이 없음)` : `${ymL(at.src)} 설정을 이어 씀`) : '기본 규칙 (아직 저장한 적 없음)';
   const pctRow = ({ k, name, sub, cost, emp, indent }: { k: string; name: string; sub?: string; cost: number; emp: number; indent?: boolean }) => {
     const s = sumOf(k);
     return (
@@ -100,8 +100,8 @@ export default function CostAllocSettings() {
         <td className={s > 100.0001 ? 'neg' : s === 0 ? 'mut' : s < 99.9999 ? 'warn' : 'ok'}>{s ? (Math.round(s * 10) / 10) + '%' : '-'}</td>
         <td style={{ whiteSpace: 'nowrap' }}>
           <button className="btn sm ghost" title="받는 본부의 기준월 인원 비율로 채움" onClick={() => fillBy(k, 'emp')}>인원 비율</button>
-          <button className="btn sm ghost" onClick={() => fillBy(k, 'even')}>균등</button>
-          <button className="btn sm ghost" onClick={() => fillBy(k, 'clear')}>비움</button>
+          <button className="btn sm ghost" onClick={() => fillBy(k, 'even')}>똑같이</button>
+          <button className="btn sm ghost" onClick={() => fillBy(k, 'clear')}>비우기</button>
         </td>
       </tr>
     );
@@ -117,31 +117,31 @@ export default function CostAllocSettings() {
         .ca td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;white-space:nowrap}
         .ca td:first-child{font-family:var(--font-body);font-weight:700}
         .ca tr.sub td{background:#fafbfd}.ca tr.sub td:first-child{padding-left:26px;font-weight:500}
-        .ca .ok{color:#2c7f2c;font-weight:700}.ca .warn{color:#9a6f00;font-weight:700}.ca .neg{color:var(--neg);font-weight:700}.ca .mut{color:var(--fg-3)}
+        .ca .ok{color:#167a3a;font-weight:700}.ca .warn{color:#8d6100;font-weight:700}.ca .neg{color:var(--neg);font-weight:700}.ca .mut{color:var(--fg-3)}
         .ca .note{font-size:12.5px;color:var(--fg-2);line-height:1.6}
       `}</style>
       <div className="page-head">
-        <div><h1>비용 배분 설정(본부)<HelpDot id="set.costalloc" /></h1><div className="help">수익이 없는 지원 조직·연구소의 비용과 인원을 수익이 있는 본부로 나눕니다. 실현 수익 화면의 본부별 현황과 운영 지표 ① 에 쓰입니다. 비율은 기준월별로 저장되고, 없는 달은 이전 달 비율을 이어서 씁니다.</div></div>
+        <div><h1>본부 비용 배분<HelpDot id="set.costalloc" /></h1><div className="help">경영전략본부 · 연구소처럼 판매 이익이 없는 조직의 비용과 인원을 사업 본부로 나눕니다. 경영 요약 · 손익 현황 · 운영 지표 ①에 씁니다. 기준월별로 저장하고, 설정이 없는 달은 가장 최근 달 비율을 씁니다.</div></div>
         <span className="sp" />
         {month && <MonthPick value={month} options={options} onChange={setMonth} />}
       </div>
 
-      {!ready ? <div className="card"><div className="empty">{model?.empty ? '실현 수익 데이터가 없습니다. 기준월·데이터 업로드를 확인하세요.' : <><span className="spinner" /> 실현 수익 계산을 불러오는 중입니다…</>}</div></div> : <>
+      {!ready ? <div className="card"><div className="empty">{model?.empty ? '판매 이익 데이터가 없습니다. 기준월과 [데이터 올리기]를 확인해 주세요.' : <><span className="spinner" /> 계산하는 중입니다.</>}</div></div> : <>
         <div className="card" style={{ padding: '12px 16px' }}>
-          <div className="note"><b>{ymL(month)}</b> · <span style={{ color: at.src === month ? '#2c7f2c' : '#9a6f00' }}>{status}</span><br />
-            받는 본부 = 조회 기간에 실현 수익이 있는 본부 ({targets.join(', ') || '없음'}). 비율 합이 100% 보다 작으면 나머지는 원래 조직에 남습니다. 본부 줄의 비율은 소속 부서 전체에 적용되고, "팀별로 따로"를 켜면 부서마다 다르게 정할 수 있습니다(부서 줄이 비어 있으면 본부 줄 비율을 따름).</div>
+          <div className="note"><b>{ymL(month)}</b> · <span style={{ color: at.src === month ? 'var(--green-2)' : 'var(--amber-2)' }}>{status}</span><br />
+            받는 본부는 판매 이익이 있는 본부입니다 ({targets.join(', ') || '없음'}). 합이 100%보다 작으면 나머지는 원래 조직에 남습니다. "팀별로 따로"를 켜면 부서마다 다르게 정할 수 있고, 비워 둔 부서는 본부 줄 비율을 따릅니다.</div>
         </div>
 
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="tbl-wrap"><table>
-            <thead><tr><th>나눌 조직</th><th>{ymL(month)} 비용</th><th>인원</th>{targets.map(t => <th key={t}>→ {t} (%)</th>)}<th>합계</th><th style={{ textAlign: 'left' }}>채우기</th></tr></thead>
+            <thead><tr><th>나눌 조직</th><th>{ymL(month)} 비용</th><th>인원</th>{targets.map(t => <th key={t}>→ {t} (%)</th>)}<th>합계</th><th style={{ textAlign: 'left' }}>한 번에 채우기</th></tr></thead>
             <tbody>
               {sources.map(s => [
                 pctRow({ k: 'hq:' + s.hq, name: s.hq, cost: s.cost, emp: s.emp }),
                 <tr key={s.hq + '-t'} className="sub"><td colSpan={5 + targets.length} style={{ textAlign: 'left', fontFamily: 'var(--font-body)' }}>
                   <label className="row" style={{ gap: 6, fontSize: 12, fontWeight: 400 }}><input type="checkbox" checked={!!split[s.hq]} onChange={e => { const on = e.target.checked; setSplit(o => ({ ...o, [s.hq]: on })); if (!on) setDraft(d => { const n = clone(d); s.depts.forEach(r => delete n['dept:' + r.d]); return n; }); }} />팀별로 따로 ({s.depts.length}개 부서)</label>
                 </td></tr>,
-                ...(split[s.hq] ? s.depts.map(r => pctRow({ k: 'dept:' + r.d, name: r.d, sub: draft['dept:' + r.d] ? '' : '본부 비율 따름', cost: r.cost[ci] || 0, emp: (r.empSer || [])[ci] || 0, indent: true })) : []),
+                ...(split[s.hq] ? s.depts.map(r => pctRow({ k: 'dept:' + r.d, name: r.d, sub: draft['dept:' + r.d] ? '' : '본부 비율을 따름', cost: r.cost[ci] || 0, emp: (r.empSer || [])[ci] || 0, indent: true })) : []),
               ])}
               {!sources.length && <tr><td colSpan={5 + targets.length} className="mut" style={{ textAlign: 'center', padding: 20 }}>나눌 조직이 없습니다.</td></tr>}
             </tbody>
@@ -149,18 +149,18 @@ export default function CostAllocSettings() {
         </div>
 
         {preview && <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13.5 }}>미리보기 · {ymL(month)} 기준 (저장 전 값)</div>
+          <div style={{ padding: '14px 20px 10px', fontWeight: 700, fontSize: 15.5 }}>미리 보기 <span className="help" style={{ fontWeight: 400, marginLeft: 6 }}>{ymL(month)} · 지금 입력한 비율</span></div>
           <div className="tbl-wrap"><table>
-            <thead><tr><th>본부</th><th>원래 비용</th><th>받는 비용</th><th>배분 후 비용</th><th>원래 인원</th><th>받는 인원</th><th>배분 후 인원</th><th style={{ textAlign: 'left' }}>받는 곳</th></tr></thead>
+            <thead><tr><th>본부</th><th>원래 비용</th><th>받는 비용</th><th>나눈 뒤 비용</th><th>원래 인원</th><th>받는 인원</th><th>나눈 뒤 인원</th><th style={{ textAlign: 'left' }}>어디서 받나</th></tr></thead>
             <tbody>{preview.hqs.map(h => {
               const inC = h.inFrom.reduce((a, f) => a + f.cost[0], 0), inE = h.inFrom.reduce((a, f) => a + f.emp[0], 0);
-              return <tr key={h.hq}><td>{h.hq}</td><td>{fmt(h.ownCost[0])}</td><td style={{ color: inC ? '#9a6f00' : undefined }}>{inC ? '+' + fmt(inC) : '-'}</td><td><b>{fmt(h.cost[0])}</b></td><td>{(Math.round(h.ownEmp[0] * 10) / 10).toLocaleString('ko-KR')}</td><td>{inE ? '+' + (Math.round(inE * 10) / 10).toLocaleString('ko-KR') : '-'}</td><td><b>{(Math.round(h.emp[0] * 10) / 10).toLocaleString('ko-KR')}</b></td><td className="mut" style={{ textAlign: 'left', fontFamily: 'var(--font-body)' }}>{h.inFrom.filter(f => f.cost[0]).map(f => `${f.from} ${kor(f.cost[0])}`).join(' · ')}</td></tr>;
+              return <tr key={h.hq}><td>{h.hq}</td><td>{fmt(h.ownCost[0])}</td><td style={{ color: inC ? '#8d6100' : undefined }}>{inC ? '+' + fmt(inC) : '-'}</td><td><b>{fmt(h.cost[0])}</b></td><td>{(Math.round(h.ownEmp[0] * 10) / 10).toLocaleString('ko-KR')}</td><td>{inE ? '+' + (Math.round(inE * 10) / 10).toLocaleString('ko-KR') : '-'}</td><td><b>{(Math.round(h.emp[0] * 10) / 10).toLocaleString('ko-KR')}</b></td><td className="mut" style={{ textAlign: 'left', fontFamily: 'var(--font-body)' }}>{h.inFrom.filter(f => f.cost[0]).map(f => `${f.from} ${kor(f.cost[0])}`).join(' · ')}</td></tr>;
             })}</tbody>
           </table></div>
-          {preview.gone.length > 0 && <div className="help" style={{ padding: '6px 14px 10px' }}>비용·인원이 모두 넘어가 실현 수익 화면에서 빠지는 조직: {preview.gone.join(', ')}</div>}
+          {preview.gone.length > 0 && <div className="help" style={{ padding: '6px 14px 10px' }}>비용과 인원이 모두 넘어가 경영 화면의 본부 표에서 빠지는 조직: {preview.gone.join(', ')}</div>}
         </div>}
 
-        <SaveBar dirty={!same(draft, base)} saving={saving} msg={msg} onSave={save} onRevert={() => setDraft(clone(base))} saveLabel={`${ymL(month)} 저장`} note={at.src !== month ? '저장하면 이 달부터 새 비율이 적용됩니다.' : undefined} />
+        <SaveBar dirty={!same(draft, base)} saving={saving} msg={msg} onSave={save} onRevert={() => setDraft(clone(base))} saveLabel={`${ymL(month)} 저장`} note={at.src !== month ? '저장하면 이 달부터 새 비율을 씁니다.' : undefined} />
       </>}
     </div>
   );

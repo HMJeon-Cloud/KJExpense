@@ -74,10 +74,10 @@ export default function Upload() {
 
   async function upload() {
     if (!rows.length) return;
-    const what = mode === 'replace_all' ? `${ds.label} 전체 데이터를 지우고 ${fmt(rows.length)}행으로 교체합니다.`
-      : mode === 'replace_month' ? `${ds.label} ${ymLabel(ym)} 데이터${existingMonth ? ` (기존 ${fmt(existingMonth.cnt)}행)` : ''}를 ${fmt(rows.length)}행으로 교체합니다.`
-      : `${ds.label} ${ymLabel(ym)} 에 ${fmt(rows.length)}행을 추가합니다.`;
-    if (!(await confirm('업로드할까요?', what + ' 완료 후 변경 이력에 기록됩니다.', { okText: '업로드' }))) return;
+    const what = mode === 'replace_all' ? `${ds.label} 데이터를 모두 지우고 ${fmt(rows.length)}줄로 바꿉니다.`
+      : mode === 'replace_month' ? `${ds.label} ${ymLabel(ym)} 데이터${existingMonth ? ` (지금 ${fmt(existingMonth.cnt)}줄)` : ''}를 ${fmt(rows.length)}줄로 바꿉니다.`
+      : `${ds.label} ${ymLabel(ym)}에 ${fmt(rows.length)}줄을 더합니다.`;
+    if (!(await confirm('올릴까요?', what + ' 올린 기록은 아래 [최근 올린 기록]에 남습니다.', { okText: '올리기' }))) return;
     setBusy(true); setProg(0);
     try {
       const { data: batchId, error } = await supabase.rpc('begin_upload', { p_dataset: dataset, p_ym: ds.snapshot ? null : ym, p_mode: mode, p_filename: file?.name ?? '', p_columns: cols });
@@ -90,43 +90,43 @@ export default function Upload() {
         setProg(Math.min(100, Math.round(((i + CH) / payload.length) * 100)));
       }
       const { data: n } = await supabase.rpc('finish_upload', { p_batch: batchId });
-      toast(`${ds.label} ${fmt(n as number)}행 업로드 완료`);
+      toast(`${ds.label} ${fmt(n as number)}줄을 올렸습니다.`);
       try { window.dispatchEvent(new CustomEvent('kjhub:uploaded', { detail: { dataset } })); } catch { /* noop */ }
       setRows([]); setCols([]); setFile(null); if (inputRef.current) inputRef.current.value = '';
       await loadStatus();
-    } catch (e) { toast('업로드 실패: ' + (e as Error).message, 'err'); } finally { setBusy(false); }
+    } catch (e) { toast('올리지 못했습니다: ' + (e as Error).message, 'err'); } finally { setBusy(false); }
   }
 
   return (
     <div className="page">
-      <div className="page-head"><h1>데이터 업로드</h1><span className="meta">엑셀(.xlsx/.csv) 첫 번째 시트를 올립니다 · 1행 = 열 이름</span></div>
+      <div className="page-head"><div><h1>데이터 올리기</h1><div className="help">ERP에서 받은 엑셀(.xlsx · .csv)의 첫 번째 시트를 올립니다. 첫 줄은 열 이름이어야 합니다.</div></div></div>
       <div className="two" style={{ gridTemplateColumns: '1fr 1.3fr' }}>
-        <div className="card"><div className="hd">1. 파일 선택</div><div className="bd">
+        <div className="card"><div className="hd">1. 파일 고르기</div><div className="bd">
           <div className="field"><label htmlFor="up-ds">데이터 종류</label>
-            <select id="up-ds" className="inp" value={dataset} onChange={e => setDataset(e.target.value)}>{Object.entries(DATASETS).map(([k, v]) => <option key={k} value={k}>{v.label}{v.snapshot ? ' (전체 스냅샷)' : ''}</option>)}</select></div>
-          {!ds.snapshot && <div className="field"><label htmlFor="up-ym">대상 월</label><input id="up-ym" className="inp" style={{ width: 140 }} value={ymLabel(ym)} onChange={e => setYm(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="YYYY-MM" />
-            <span className="help">{monthCol ? `파일의 '${monthCol}' 열에서 월을 읽어 행마다 저장합니다. 비어 있는 행은 대상 월로 저장됩니다.` : '파일에 날짜 열이 없으면 모든 행을 대상 월로 저장합니다.'}</span></div>}
+            <select id="up-ds" className="inp" value={dataset} onChange={e => setDataset(e.target.value)}>{Object.entries(DATASETS).map(([k, v]) => <option key={k} value={k}>{v.label}{v.snapshot ? ' (전체를 한 번에)' : ''}</option>)}</select></div>
+          {!ds.snapshot && <div className="field"><label htmlFor="up-ym">올릴 달</label><input id="up-ym" className="inp" style={{ width: 140 }} value={ymLabel(ym)} onChange={e => setYm(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="YYYY-MM" />
+            <span className="help">{monthCol ? `파일의 '${monthCol}' 열에서 달을 읽어 줄마다 저장합니다. 비어 있는 줄은 위에서 고른 달로 저장합니다.` : '파일에 날짜 열이 없으면 모든 줄을 위에서 고른 달로 저장합니다.'}</span></div>}
           <div className={'drop'} onClick={() => inputRef.current?.click()} onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('over'); }} onDragLeave={e => e.currentTarget.classList.remove('over')} onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) pick(f); }}>
-            {file ? <><b>{file.name}</b><br /><span className="help">{fmt(rows.length)}행 · 열 {cols.length}개 인식됨</span></> : <>여기에 파일을 끌어다 놓거나 클릭해서 선택<br /><span className="help">.xlsx .xls .csv</span></>}
+            {file ? <><b>{file.name}</b><br /><span className="help">{fmt(rows.length)}줄 · 열 {cols.length}개</span></> : <>파일을 여기로 끌어다 놓거나 눌러서 골라 주세요<br /><span className="help">.xlsx .xls .csv</span></>}
             <input ref={inputRef} id="up-file" type="file" accept=".xlsx,.xls,.csv" hidden onChange={e => { const f = e.target.files?.[0]; if (f) pick(f); }} />
           </div>
-          <div className="field"><label>{ds.snapshot ? '저장 방식' : '같은 월 데이터가 있으면'}</label>
+          <div className="field"><label>{ds.snapshot ? '저장 방법' : '같은 달 데이터가 이미 있으면'}</label>
             <span className="seg">
-              {!ds.snapshot && <button className={mode === 'replace_month' ? 'on' : ''} onClick={() => setMode('replace_month')}>월 교체</button>}
-              {!ds.snapshot && <button className={mode === 'append' ? 'on' : ''} onClick={() => setMode('append')}>추가</button>}
-              <button className={mode === 'replace_all' ? 'on' : ''} onClick={() => setMode('replace_all')}>전체 교체</button>
+              {!ds.snapshot && <button className={mode === 'replace_month' ? 'on' : ''} onClick={() => setMode('replace_month')}>그 달만 바꾸기</button>}
+              {!ds.snapshot && <button className={mode === 'append' ? 'on' : ''} onClick={() => setMode('append')}>뒤에 더하기</button>}
+              <button className={mode === 'replace_all' ? 'on' : ''} onClick={() => setMode('replace_all')}>전체 바꾸기</button>
             </span>
-            <span className="help">{mode === 'replace_all' ? '이 데이터 종류의 모든 행을 지우고 파일 내용으로 바꿉니다 (최초 이관 때 사용).' : mode === 'append' ? '기존 행을 유지하고 뒤에 붙입니다.' : '대상 월 행만 지우고 파일 내용으로 바꿉니다.'}</span></div>
+            <span className="help">{mode === 'replace_all' ? '이 종류의 데이터를 모두 지우고 파일 내용으로 바꿉니다.' : mode === 'append' ? '있던 데이터는 그대로 두고 뒤에 더합니다. 같은 파일을 두 번 올리면 두 번 들어갑니다.' : '그 달 데이터만 지우고 파일 내용으로 바꿉니다.'}</span></div>
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             {busy && <span className="help">{prog}%</span>}
-            <button className="btn acc" disabled={busy || !rows.length} onClick={upload}>{busy ? <span className="spinner" /> : `업로드 · ${fmt(rows.length)}행`}</button>
+            <button className="btn acc" disabled={busy || !rows.length} onClick={upload}>{busy ? <span className="spinner" /> : `${fmt(rows.length)}줄 올리기`}</button>
           </div>
         </div></div>
 
-        <div className="card"><div className="hd">2. 미리보기 · 검증 <span className="sp" />{cols.length > 0 && <span className="tag g">열 {cols.length}</span>} {monthCol ? <span className="tag b">월 열: {monthCol}</span> : cols.length > 0 && !ds.snapshot ? <span className="tag y">월 열 없음</span> : null}</div>
-          {!rows.length ? <div className="empty">파일을 선택하면 열 이름과 앞 5행이 여기 표시됩니다.</div> : (
+        <div className="card"><div className="hd">2. 미리 보기 <span className="sp" />{cols.length > 0 && <span className="tag g">열 {cols.length}</span>} {monthCol ? <span className="tag b">달을 읽는 열: {monthCol}</span> : cols.length > 0 && !ds.snapshot ? <span className="tag y">날짜 열 없음</span> : null}</div>
+          {!rows.length ? <div className="empty">파일을 고르면 열 이름과 앞 5줄이 여기에 나옵니다.</div> : (
             <>
-              {monthStat && <div className="row" style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)' }}><span className="help">월별 행 수:</span>{monthStat.map(([k, n]) => <span key={k} className={'chip' + (k === ym ? ' on' : '')}>{ymLabel(k)} {fmt(n)}</span>)}</div>}
+              {monthStat && <div className="row" style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)' }}><span className="help">달마다 줄 수</span>{monthStat.map(([k, n]) => <span key={k} className={'chip' + (k === ym ? ' on' : '')}>{ymLabel(k)} {fmt(n)}</span>)}</div>}
               <div className="tbl-wrap" style={{ maxHeight: 360 }}><table className="tbl"><thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead>
                 <tbody>{rows.slice(0, 5).map((r, i) => <tr key={i}>{cols.map(c => <td key={c}>{String(r[c] ?? '')}</td>)}</tr>)}</tbody></table></div>
             </>
@@ -135,12 +135,12 @@ export default function Upload() {
       </div>
 
       <div className="two">
-        <div className="card"><div className="hd">현재 저장된 데이터 <span className="sp" /><button className="btn sm ghost" onClick={loadStatus}>새로고침</button></div>
-          <div className="tbl-wrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>데이터</th><th>월</th><th className="num">행 수</th><th>마지막 업로드</th></tr></thead>
-            <tbody>{summary.length === 0 ? <tr><td colSpan={4} className="empty">아직 데이터가 없습니다.</td></tr> : summary.map((s, i) => <tr key={i}><td>{DATASETS[s.dataset]?.label ?? s.dataset}</td><td>{s.ym ? ymLabel(s.ym) : <span className="tag gr">스냅샷</span>}</td><td className="num">{fmt(s.cnt)}</td><td className="help">{kst(s.last_at)}</td></tr>)}</tbody></table></div></div>
-        <div className="card"><div className="hd">최근 업로드 이력</div>
-          <div className="tbl-wrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>시각</th><th>데이터</th><th>월</th><th>방식</th><th className="num">행</th><th>파일</th><th>담당</th></tr></thead>
-            <tbody>{batches.map(b => <tr key={b.id}><td className="help">{kst(b.created_at)}</td><td>{DATASETS[b.dataset]?.label ?? b.dataset}</td><td>{b.ym ? ymLabel(b.ym) : '-'}</td><td><span className={'tag ' + (b.mode === 'replace_all' ? 'o' : b.mode === 'append' ? 'g' : 'b')}>{b.mode === 'replace_all' ? '전체 교체' : b.mode === 'append' ? '추가' : '월 교체'}</span></td><td className="num">{fmt(b.row_count)}</td><td className="help">{b.filename}</td><td>{b.uploaded_by}</td></tr>)}</tbody></table></div></div>
+        <div className="card"><div className="hd">지금 저장된 데이터 <span className="sp" /><button className="btn sm ghost" onClick={loadStatus}>다시 불러오기</button></div>
+          <div className="tbl-wrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>데이터</th><th>달</th><th className="num">줄 수</th><th>마지막으로 올린 때</th></tr></thead>
+            <tbody>{summary.length === 0 ? <tr><td colSpan={4} className="empty">아직 데이터가 없습니다.</td></tr> : summary.map((s, i) => <tr key={i}><td>{DATASETS[s.dataset]?.label ?? s.dataset}</td><td>{s.ym ? ymLabel(s.ym) : <span className="tag gr">전체</span>}</td><td className="num">{fmt(s.cnt)}</td><td className="help">{kst(s.last_at)}</td></tr>)}</tbody></table></div></div>
+        <div className="card"><div className="hd">최근 올린 기록</div>
+          <div className="tbl-wrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>때</th><th>데이터</th><th>달</th><th>방법</th><th className="num">줄 수</th><th>파일</th><th>올린 사람</th></tr></thead>
+            <tbody>{batches.map(b => <tr key={b.id}><td className="help">{kst(b.created_at)}</td><td>{DATASETS[b.dataset]?.label ?? b.dataset}</td><td>{b.ym ? ymLabel(b.ym) : '-'}</td><td><span className={'tag ' + (b.mode === 'replace_all' ? 'o' : b.mode === 'append' ? 'g' : 'b')}>{b.mode === 'replace_all' ? '전체 바꾸기' : b.mode === 'append' ? '뒤에 더하기' : '그 달만 바꾸기'}</span></td><td className="num">{fmt(b.row_count)}</td><td className="help">{b.filename}</td><td>{b.uploaded_by}</td></tr>)}</tbody></table></div></div>
       </div>
       <ConfigImport onDone={loadStatus} actor={employee?.login_id ?? ''} />
     </div>
@@ -154,20 +154,20 @@ function ConfigImport({ onDone, actor }: { onDone: () => void; actor: string }) 
   const [busy, setBusy] = useState(false);
   async function run() {
     let cfg: Record<string, unknown>;
-    try { cfg = JSON.parse(text); } catch { return toast('JSON 형식이 아닙니다.', 'err'); }
+    try { cfg = JSON.parse(text); } catch { return toast('JSON 형식이 아닙니다. 내용을 다시 확인해 주세요.', 'err'); }
     const keys = ['groups', 'items', 'support', 'closeMonth'].filter(k => k in cfg);
     if (!keys.length) return toast('groups / items / support / closeMonth 중 하나도 없습니다.', 'err');
-    if (!(await confirm('설정을 가져올까요?', `${keys.join(', ')} 설정을 현재 값 위에 덮어씁니다. 이전 값은 변경 이력에 남습니다.`, { okText: '가져오기' }))) return;
+    if (!(await confirm('설정을 가져올까요?', `${keys.join(', ')} 설정을 지금 값 대신 넣습니다. 이전 값은 [변경 이력]에 남습니다.`, { okText: '가져오기' }))) return;
     setBusy(true);
     try {
       for (const k of keys) { const { error } = await supabase.rpc('save_config', { p_key: k, p_value: cfg[k], p_summary: `Apps Script 설정 가져오기 (${actor})` }); if (error) throw error; }
-      toast(`설정 ${keys.length}건 가져오기 완료`); setText(''); onDone();
+      toast(`설정 ${keys.length}건을 가져왔습니다.`); setText(''); onDone();
       try { window.dispatchEvent(new CustomEvent('kjhub:allocsaved')); } catch { /* noop */ }
-    } catch (e) { toast('실패: ' + (e as Error).message, 'err'); } finally { setBusy(false); }
+    } catch (e) { toast('가져오지 못했습니다: ' + (e as Error).message, 'err'); } finally { setBusy(false); }
   }
   return (
-    <div className="card"><div className="hd">3. 기존 설정 가져오기 (Apps Script → Supabase, 최초 1회)</div><div className="bd">
-      <span className="help">기존 Apps Script 편집기에서 <code>exportAllConfig()</code> 를 실행해 나온 JSON 전체를 붙여넣으세요. 배분 비율(groups)·품목/원자재(items)·지원 내역(support)·마감월(closeMonth)이 옮겨집니다.</span>
+    <div className="card"><div className="hd">3. 예전 설정 가져오기 (처음 한 번만)</div><div className="bd">
+      <span className="help">예전 Apps Script 편집기에서 <code>exportAllConfig()</code>를 실행해 나온 JSON 전체를 붙여 넣어 주세요. 배분 비율 · 품목/자재 판매가 · 지원 내역 · 마감월이 옮겨집니다.</span>
       <textarea id="cfg-json" className="inp" rows={5} value={text} onChange={e => setText(e.target.value)} placeholder='{"groups":{...},"items":{...},"support":{...},"closeMonth":"202608"}' style={{ fontFamily: 'monospace', fontSize: 12 }} />
       <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn pri" disabled={busy || !text.trim()} onClick={run}>{busy ? <span className="spinner" /> : '가져오기'}</button></div>
     </div></div>

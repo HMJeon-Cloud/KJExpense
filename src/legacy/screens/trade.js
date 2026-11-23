@@ -45,10 +45,10 @@ export default function init() {
   ];
   PROFIT_COLS.forEach(pc => {
     pc.title = pc.kind === 'buy'
-      ? pc.dept + ' 수익 — 합성 대상 아님: 입고 부서가 ' + pc.dept + '인 LOT의 (판매가(구매) − 단가(원)) × 판매수량 · 합성 대상: 실자재투입내역에서 DeptName이 ' + pc.dept + '인 원료의 (판매가(구매) − InPrice) × Qty 합계 · 판매가(구매)는 원료 입고월(DelvInDate) 기준'
+      ? pc.dept + ' 단계 이익 — 합성 대상 아님: 입고 부서가 ' + pc.dept + '인 LOT의 (판매가(구매) − 단가(원)) × 판매수량 · 합성 대상: 실자재투입내역에서 DeptName이 ' + pc.dept + '인 원료의 (판매가(구매) − InPrice) × Qty 합계 · 판매가(구매)는 원료 입고월(DelvInDate) 기준'
       : pc.kind === 'syn'
-        ? pc.dept + ' 수익 — (판매가(합성) − 제조원가) × 판매수량 · 합성 대상 LOT 중 품목코드 ' + (pc.key === 'matprod' ? '첫 글자 M' : '첫 글자 M 외') + ' 인 경우'
-        : pc.dept + ' 수익 — 판매금액 − (넘겨받는 단가 × 판매수량) · 합성 대상: 판매가(합성) / 그 외: 판매가(구매) · 품목코드 ' + (pc.key === 'matsales' ? '첫 글자 M' : '첫 글자 M 외') + ' 인 경우';
+        ? pc.dept + ' 단계 이익 — (판매가(합성) − 제조원가) × 판매수량 · 합성 대상 LOT 중 품목코드 ' + (pc.key === 'matprod' ? '첫 글자 M' : '첫 글자 M 외') + ' 인 경우'
+        : pc.dept + ' 단계 이익 — 판매금액 − (넘겨받는 단가 × 판매수량) · 합성 대상: 판매가(합성) / 그 외: 판매가(구매) · 품목코드 ' + (pc.key === 'matsales' ? '첫 글자 M' : '첫 글자 M 외') + ' 인 경우';
   });
   const PROFIT_DEPT_KEY = (() => { const m = Object.create(null); PROFIT_COLS.forEach(pc => { if (pc.kind === 'buy') m[String(pc.dept).replace(/\s+/g, '').toUpperCase()] = pc.key; }); return m; })();
   // 실자재투입내역 조회 유틸 (원료별 부서·단가)
@@ -2252,9 +2252,9 @@ export default function init() {
       className: "bg-white border border-indigo-100 rounded-lg shadow-sm overflow-hidden w-full"
     }, /*#__PURE__*/React.createElement("div", {
       className: "bg-indigo-50/60 px-3 py-1.5 border-b border-indigo-100 text-indigo-800 font-semibold text-xs flex items-center gap-2"
-    }, "비용 상세", React.createElement(HelpQ, { id: "trade.lotDetail" }), /*#__PURE__*/React.createElement("span", {
+    }, "LOT 내역", React.createElement(HelpQ, { id: "trade.lotDetail" }), /*#__PURE__*/React.createElement("span", {
       className: "font-normal text-[10px] text-indigo-400"
-    }, "· 컬럼 헤더 클릭 시 정렬 (재클릭 시 오름/내림 전환)")), /*#__PURE__*/React.createElement("div", {
+    }, "· 열 이름을 누르면 정렬")), /*#__PURE__*/React.createElement("div", {
       className: "overflow-x-auto custom-scrollbar w-full pb-1"
     }, /*#__PURE__*/React.createElement("table", {
       className: "w-full text-[11px] leading-tight text-left whitespace-nowrap"
@@ -2276,11 +2276,11 @@ export default function init() {
     }, "입고 (구매/생산)"), /*#__PURE__*/React.createElement("th", {
       className: "py-1.5 px-1.5 font-semibold text-right border-l border-b border-slate-200 text-cyan-700 bg-cyan-50/40",
       rowSpan: 2,
-      title: "[배분 비율 설정(품목)]의 판매가(구매) — 입고월 기준"
+      title: "[품목 판매가]의 판매가(구매) · 입고월 기준"
     }, "\uB0B4 \uB2E8\uAC00", /*#__PURE__*/React.createElement("br", null), "(\uC6D0)"), /*#__PURE__*/React.createElement("th", {
       className: "py-1.5 px-1.5 font-semibold text-right border-l border-b border-slate-200 text-cyan-800 bg-cyan-50/40",
       rowSpan: 2,
-      title: "[배분 비율 설정(품목)]의 판매가(합성) — 입고월 기준"
+      title: "[품목 판매가]의 판매가(합성) · 입고월 기준"
     }, "\uB0B4 \uC81C\uC870", /*#__PURE__*/React.createElement("br", null), "\uC6D0\uAC00"), /*#__PURE__*/React.createElement("th", {
       className: "py-1.5 px-1.5 font-medium text-right border-l border-b border-slate-200 text-orange-700 bg-orange-50/40 " + sortableCls,
       rowSpan: 2,
@@ -2289,8 +2289,8 @@ export default function init() {
       className: "py-1.5 px-1.5 font-semibold text-right border-l border-b border-slate-200 text-slate-700 bg-slate-100/50 " + sortableCls,
       rowSpan: 2,
       ...saleTh('COGS'),
-      title: "제조원가(입고월 ProcPrice) × 판매수량 · 클릭하여 정렬"
-    }, "매출 원가(원)"), /*#__PURE__*/React.createElement("th", {
+      title: "제조원가(입고월 ProcPrice) × 판매수량 · 누르면 정렬"
+    }, "원가"), /*#__PURE__*/React.createElement("th", {
       className: "py-1 px-1.5 font-semibold text-center border-l border-emerald-100 bg-emerald-50 text-emerald-700",
       colSpan: 9
     }, "판매"),
@@ -2301,11 +2301,11 @@ export default function init() {
       style: { color: pc.color },
       rowSpan: 2,
       title: pc.title
-    }, "수익", /*#__PURE__*/React.createElement("br", null), "(" + pc.short + ")")), /*#__PURE__*/React.createElement("th", {
+    }, "단계 이익", /*#__PURE__*/React.createElement("br", null), "(" + pc.short + ")")), /*#__PURE__*/React.createElement("th", {
       className: "py-1.5 px-1.5 font-bold text-center border-l border-b border-slate-200 text-indigo-700 " + sortableCls,
       rowSpan: 2,
       ...saleTh('MARGIN')
-    }, "실현 수익")), /*#__PURE__*/React.createElement("tr", {
+    }, "판매 이익")), /*#__PURE__*/React.createElement("tr", {
       className: "bg-slate-50"
     }, /*#__PURE__*/React.createElement("th", {
       className: "py-1 px-1.5 font-medium text-center border-l border-b border-slate-200 text-slate-500 " + sortableCls,
@@ -2334,7 +2334,7 @@ export default function init() {
     }, "판매수량"), /*#__PURE__*/React.createElement("th", {
       className: "py-1 px-1.5 font-medium text-left border-l border-b border-emerald-100 text-emerald-600 bg-emerald-50/50 max-w-[120px] truncate " + sortableCls,
       ...saleTh('CUSTNAME')
-    }, "청구처"), /*#__PURE__*/React.createElement("th", {
+    }, "거래처"), /*#__PURE__*/React.createElement("th", {
       className: "py-1 px-1.5 font-medium text-center border-b border-emerald-100 text-emerald-600 bg-emerald-50/50 " + sortableCls,
       ...saleTh('EMPNAME')
     }, "영업담당"), /*#__PURE__*/React.createElement("th", {
@@ -2520,7 +2520,7 @@ export default function init() {
               const __c = (lotObj.searchKeywords && lotObj.searchKeywords.itemNo) || '';
               if (window.KJHub && window.KJHub.openMatInput) window.KJHub.openMatInput({ itemNo: __c, itemName: (lotObj.searchKeywords && lotObj.searchKeywords.itemName) || '', lotNo: lotObj.lotNo || '', ym: String(lotObj.pDateRaw || '').replace(/[^0-9]/g, '').slice(0, 6) });
             },
-            title: "실자재투입내역 보기 (행 더블클릭도 가능)",
+            title: "자재 투입 보기 (줄을 두 번 눌러도 됩니다)",
             className: "text-[10px] font-sans font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded px-1.5 py-0.5 whitespace-nowrap"
           }, "실자재"))), /*#__PURE__*/React.createElement("td", {
           rowSpan: rowSpan,
@@ -2551,7 +2551,7 @@ export default function init() {
               className: "py-1 px-1.5 text-center text-slate-500 border-l border-slate-200 " + pb,
               title: "이 행 배정 " + formatFloat(segQty) + " / 이 입고 건 수량 " + formatFloat(pQtyAll) + " · LOT 입고 " + pRows.length + "건 (선입선출 배정)"
             }, /*#__PURE__*/React.createElement("span", null, pDt ? formatDate(pDt) : '-'),
-              __segIsIn && /*#__PURE__*/React.createElement("span", { className: "ml-1 text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded px-1", title: "기타입고 (수입구분/SMImpTypeName) — 같은 LOT·품번(Chk)에 수량만 더함 · 이 입고분 판매는 부서별 이윤 없이 실현 수익만" }, "기타입고"),
+              __segIsIn && /*#__PURE__*/React.createElement("span", { className: "ml-1 text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded px-1", title: "기타입고 (수입구분/SMImpTypeName) · 같은 LOT·품번(Chk)에 수량만 더함 · 이 입고분의 판매는 단계 이익 없이 판매 이익만 계산" }, "기타입고"),
               /*#__PURE__*/React.createElement("span", { className: "ml-1 text-[10px] text-slate-400" }, "(" + formatFloat(segQty) + ")")),
             cell("text-center text-slate-500", getVal(p, 'CURRNAME', '통화') || '-'),
             cell("text-right text-slate-600", formatFloat(getVal(p, 'PRICE', '단가'))),
@@ -2596,15 +2596,15 @@ export default function init() {
         }, formatNumber(Math.round(parseNum(getVal(s, 'DOMAMT', '판매금액', '원화금액')) * segRatio)))) : (seg && seg.matUsed) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-indigo-600 bg-indigo-50/30 border-l border-slate-100 " + bottomBorder + " font-medium",
-          title: "실자재투입 내역에서 이 LOT(같은 품번)이 생산에 투입된 수량 — 재고에서 뺌. 원료 수익은 생산된 제품 LOT 에서 원료 부서로 계산합니다 (여기서 또 계산하면 중복)."
+          title: "[실자재투입 내역]에서 이 LOT(같은 품번)이 생산에 들어간 수량입니다. 재고에서 뺍니다. 자재의 단계 이익은 만든 제품 LOT에서 계산합니다."
         }, "생산 투입 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '')) : (seg && seg.retUsed) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-rose-700 bg-rose-50/40 border-l border-slate-100 " + bottomBorder + " font-medium",
-          title: "구매 데이터의 수입구분(또는 SMImpTypeName) '반품' 행 (같은 LOTNo + ItemNoChk) — 수량·금액(음수)을 구매에 더함 · 부서별 이윤 없음"
+          title: "구매 데이터의 수입구분(또는 SMImpTypeName) '반품' 줄 (같은 LOTNo + ItemNoChk) · 수량·금액(음수)을 구매에 더함 · 단계 이익 없음"
         }, "반품 -" + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '') + (seg.oRow ? " · " + formatNumber(Math.round(parseNum(getVal(seg.oRow, 'DOMAMT', '원화금액')) * (seg.rq > 0 ? segQty / seg.rq : 1))) + "원" + (cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) ? " (" + cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) + ")" : "") : "")) : (seg && seg.outUsed) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-amber-700 bg-amber-50/40 border-l border-slate-100 " + bottomBorder + " font-medium",
-          title: "구매 데이터의 SMImpTypeName '기타출고' 행 (같은 LOTNo + ItemNoChk) — 재고에서 뺌 · 구매 부서 이윤만 계산, 실현 수익 없음"
+          title: "구매 데이터의 SMImpTypeName '기타출고' 줄 (같은 LOTNo + ItemNoChk) · 재고에서 뺌 · 구매 단계 이익만 계산, 판매 이익 없음"
         }, "기타출고 " + formatFloat(segQty) + " " + (pRows[0] ? getVal(pRows[0], 'UNITNAME', '단위') || '' : '') + (seg.oRow && cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) ? " (" + cleanString(getVal(seg.oRow, 'PERMITDATE', '수입면장일자', '구매일자')) + ")" : "")) : (seg && seg.disposedAll) ? /*#__PURE__*/React.createElement("td", {
           colSpan: 9,
           className: "py-1 px-1.5 text-center text-red-500 bg-red-50/30 border-l border-slate-100 " + bottomBorder + " font-medium"

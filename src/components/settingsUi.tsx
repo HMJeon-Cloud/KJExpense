@@ -1,6 +1,7 @@
 // 설정 화면 공통 조각 — 기준월 선택, 저장 막대(미저장 표시·메시지), 작은 도우미
 import { useEffect, useState, type ReactNode } from 'react';
 import { ymLabel } from '../lib/legacyData';
+import { onMeta } from '../legacy/hub';
 
 export type Msg = { text: string; cls: string };
 /** 기존 설정 모듈의 상태 변화(kjhub:cfg)와 데이터 갱신에 맞춰 다시 그리기 */
@@ -10,7 +11,8 @@ export function useCfgTick(part: string) {
     const h = (e: Event) => { const d = (e as CustomEvent).detail; if (!d || !d.part || d.part === part) setTick(t => t + 1); };
     const any = () => setTick(t => t + 1);
     window.addEventListener('kjhub:cfg', h); window.addEventListener('kjhub:data', any); window.addEventListener('kjhub:results', any); window.addEventListener('kjhub:itemalloc', any); window.addEventListener('kjsupport:ready', any); window.addEventListener('kjhub:closemonth', any);
-    return () => { window.removeEventListener('kjhub:cfg', h); window.removeEventListener('kjhub:data', any); window.removeEventListener('kjhub:results', any); window.removeEventListener('kjhub:itemalloc', any); window.removeEventListener('kjsupport:ready', any); window.removeEventListener('kjhub:closemonth', any); };
+    const offMeta = onMeta(any);   // 데이터가 도착하면 다시 그림 (kjhub:data 는 계산 모듈용이라 안 올 수 있음)
+    return () => { offMeta(); window.removeEventListener('kjhub:cfg', h); window.removeEventListener('kjhub:data', any); window.removeEventListener('kjhub:results', any); window.removeEventListener('kjhub:itemalloc', any); window.removeEventListener('kjsupport:ready', any); window.removeEventListener('kjhub:closemonth', any); };
   }, [part]);
   return tick;
 }
@@ -20,23 +22,25 @@ export function MonthPick({ value, options, onChange, label = '기준월' }: { v
   return (
     <span className="row" style={{ gap: 6 }}>
       <span className="help">{label}</span>
-      <span className="seg"><button onClick={() => i >= 0 && i < options.length - 1 && onChange(options[i + 1])} disabled={i < 0 || i >= options.length - 1}>‹</button></span>
-      <select className="inp" style={{ fontFamily: 'var(--font-num)', fontWeight: 600 }} value={value} onChange={e => onChange(e.target.value)}>{(i < 0 && value ? [value, ...options] : options).map(m => <option key={m} value={m}>{ymLabel(m)}</option>)}</select>
-      <span className="seg"><button onClick={() => i > 0 && onChange(options[i - 1])} disabled={i <= 0}>›</button></span>
+      <span className="monthnav">
+        <button onClick={() => i >= 0 && i < options.length - 1 && onChange(options[i + 1])} disabled={i < 0 || i >= options.length - 1} aria-label="이전 달">‹</button>
+        <select value={value} onChange={e => onChange(e.target.value)} aria-label={label}>{(i < 0 && value ? [value, ...options] : options).map(m => <option key={m} value={m}>{ymLabel(m)}</option>)}</select>
+        <button onClick={() => i > 0 && onChange(options[i - 1])} disabled={i <= 0} aria-label="다음 달">›</button>
+      </span>
     </span>
   );
 }
 
 export function SaveBar({ dirty, saving, msg, onSave, onRevert, saveLabel = '저장', note, children }: { dirty: boolean; saving?: boolean; msg?: Msg; onSave: () => void; onRevert: () => void; saveLabel?: string; note?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="savebar" style={{ position: 'sticky', bottom: 0, zIndex: 5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 16px', background: dirty ? '#fff8e6' : 'var(--surface)', border: '1px solid ' + (dirty ? '#f5b400' : 'var(--line)'), borderRadius: 12, boxShadow: '0 -4px 16px rgba(0,0,0,.05)' }}>
-      {dirty ? <span className="tag y" style={{ fontWeight: 700 }}>미저장 변경</span> : <span className="tag gr">저장됨</span>}
+    <div className="savebar" style={{ position: 'sticky', bottom: 0, zIndex: 5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 16px', background: dirty ? '#fffaeb' : 'var(--surface)', border: '1px solid ' + (dirty ? 'var(--amber)' : 'var(--line)'), borderRadius: 14, boxShadow: '0 -6px 20px rgba(15,23,42,.06)' }}>
+      {dirty ? <span className="tag y" style={{ fontWeight: 700 }}>아직 저장 전</span> : <span className="tag gr">저장됨</span>}
       {note && <span className="help">{note}</span>}
-      {msg?.text && <span className="help" style={{ color: msg.cls === 'neg' ? 'var(--neg)' : msg.cls === 'pos' ? '#2c7f2c' : undefined }}>{msg.text}</span>}
+      {msg?.text && <span className="help" style={{ color: msg.cls === 'neg' ? 'var(--neg)' : msg.cls === 'pos' ? '#167a3a' : undefined }}>{msg.text}</span>}
       <span className="sp" />
       {children}
       <button className="btn" onClick={onRevert} disabled={!dirty || saving}>되돌리기</button>
-      <button className="btn pri" onClick={onSave} disabled={saving}>{saving ? '저장 중…' : saveLabel}</button>
+      <button className="btn pri" onClick={onSave} disabled={saving}>{saving ? '저장하는 중' : saveLabel}</button>
     </div>
   );
 }

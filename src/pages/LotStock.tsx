@@ -1,25 +1,23 @@
-// Lot별 재고조회 — 결론(재고금액·유효기간 경고) → 사업장·품목 구성 → 사업장별 LOT 표
+// 거래·재고 › 재고 — 재고 금액 · 유효기간 → 사업장 · 품목 구성 → 사업장별 LOT 표
 //   데이터 해석 규칙은 기존 모듈(legacy/screens/lotStock.js)과 동일합니다.
-import { ListHead } from '../components/ListHead';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { fmt } from '../components/ui';
-import { HelpDot } from '../components/Help';
-import { kor } from '../components/charts';
+import { PALETTE } from '../components/charts';
+import { PageHead, Stat, Card, Loading, Empty, won } from '../components/kit';
+import { useData } from '../lib/useData';
 import { KJ, nrm, num, pick, d8, fmtD, today8, daysBetween, type Raw } from '../lib/legacyData';
 
 type SRow = { biz: string; itemNo: string; itemName: string; lotNo: string; regDate: string; createDate: string; valiDate: string; qty: number; unit: string; exRate: number; price: number; amt: number; left: number | null };
 type Col = { k: keyof SRow; label: string; num?: boolean; float?: boolean; date?: boolean; w?: number; clip?: boolean; center?: boolean };
 const COLS: Col[] = [
-  { k: 'itemNo', label: '품번', w: 110 }, { k: 'itemName', label: '품명', w: 200, clip: true }, { k: 'lotNo', label: '제조번호', w: 120, clip: true },
-  { k: 'regDate', label: '입고일', w: 96, date: true, center: true }, { k: 'createDate', label: '제조일', w: 96, date: true, center: true }, { k: 'valiDate', label: '유효일자', w: 130, date: true, center: true },
-  { k: 'qty', label: '수량', w: 92, num: true, float: true }, { k: 'unit', label: '단위', w: 56, center: true }, { k: 'exRate', label: '환율', w: 68, num: true, float: true }, { k: 'price', label: '단가', w: 104, num: true, float: true }, { k: 'amt', label: '재고금액', w: 124, num: true },
+  { k: 'itemNo', label: '품번', w: 104 }, { k: 'itemName', label: '품명', clip: true }, { k: 'lotNo', label: 'LOT', w: 112, clip: true },
+  { k: 'regDate', label: '입고일', w: 104, date: true, center: true }, { k: 'createDate', label: '제조일', w: 104, date: true, center: true }, { k: 'valiDate', label: '유효기간', w: 168, date: true, center: true },
+  { k: 'qty', label: '수량', w: 84, num: true, float: true }, { k: 'unit', label: '단위', w: 48, center: true }, { k: 'exRate', label: '환율', w: 56, num: true, float: true }, { k: 'price', label: '단가', w: 92, num: true, float: true }, { k: 'amt', label: '재고 금액', w: 118, num: true },
 ];
 const fmtF = (v: number) => (Math.round((Number(v) || 0) * 10000) / 10000).toLocaleString('ko-KR');
-const BIZ_COLORS = ['#1F6FE8', '#9CCF2A', '#F26A1B', '#F5B400', '#7C5CBF', '#3AA63A'];
 
 export default function LotStock() {
-  const [tick, setTick] = useState(0);
-  useEffect(() => { const h = () => setTick(t => t + 1); window.addEventListener('kjhub:data', h); return () => window.removeEventListener('kjhub:data', h); }, []);
+  const { ver: tick } = useData(['stock']);
   const [qItem, setQItem] = useState(''); const [qLot, setQLot] = useState(''); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [exp, setExp] = useState('');
   const [bizSel, setBizSel] = useState(''); const [itemSel, setItemSel] = useState('');
   const [sort, setSort] = useState<{ k: keyof SRow; d: 1 | -1 }>({ k: 'amt', d: -1 });
@@ -45,107 +43,95 @@ export default function LotStock() {
   const maxI = Math.max(1, ...byItem.slice(0, 10).map(x => x[1].amt));
   const reset = () => { setQItem(''); setQLot(''); setFrom(''); setTo(''); setExp(''); setBizSel(''); setItemSel(''); };
 
+  const expSum = sum(expired), soonSum = sum(soon), soon90Sum = sum(soon90);
+  const filtered = !!(qItem || qLot || from || to || exp || bizSel || itemSel);
+
   return (
-    <div className="page brief" style={{ gap: 16, maxWidth: 1500 }}>
+    <div className="page ls">
       <style>{`
-        .brief>*,.ls>*{min-width:0}
-        .ls .fbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
-        .ls .fbar label{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--fg-3)}
-        .ls .verdict{display:grid;grid-template-columns:1fr 1.3fr 1fr;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-        .ls .verdict>div{padding:16px 20px;min-width:0}.ls .verdict>div+div{border-left:1px solid var(--line)}
-        .ls .l{font-size:12px;color:var(--fg-3)}
-        .ls .big{font:800 34px/1.1 var(--font-num);letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
-        .ls .stack{display:flex;height:14px;border-radius:999px;overflow:hidden;margin-top:12px;background:var(--surface-2)}.ls .stack i{display:block;height:100%}
-        .ls .lg{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px}.ls .lg span i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-        .ls .lg span{cursor:pointer}.ls .lg span.on{font-weight:700}
-        .ls .warn{display:grid;gap:6px;margin-top:8px}
-        .ls .warn .w{display:flex;justify-content:space-between;align-items:baseline;padding:7px 10px;border-radius:8px;cursor:pointer;font-size:12.5px}
-        .ls .warn .w:hover{filter:brightness(.97)}
-        .ls .warn b{font-family:var(--font-num);font-variant-numeric:tabular-nums}
-        .ls .rk{display:grid;gap:2px;padding:8px 10px 10px}
-        .ls .r{display:grid;grid-template-columns:minmax(0,1fr) 60px 110px 120px;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}
-        .ls .r:hover{background:var(--surface-2)}.ls .r.on{background:var(--brand-soft)}
-        .ls .r .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-        .ls .hb{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-top:3px}.ls .hb i{display:block;height:100%;border-radius:999px;background:#1f6fe8}
-        .ls .n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
-        .ls table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;min-width:1100px}
-        .ls th{text-align:left;color:var(--fg-3);font-weight:500;font-size:11.5px;padding:7px 8px;border-bottom:2px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
-        .ls th:hover{background:var(--surface-2)}
-        .ls td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .ls td.n,.ls th.n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
-        .ls td.c,.ls th.c{text-align:center}
-        .ls td.amt{font-weight:700}
-        .ls .exp{color:var(--neg);font-weight:700}.ls .soon{color:#9a6f00;font-weight:700}
-        .ls .bizhd{display:flex;gap:10px;align-items:center;padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);cursor:pointer;font-weight:700;font-size:13px}
-        @media(max-width:1000px){.ls .verdict{grid-template-columns:1fr}.ls .verdict>div+div{border-left:0;border-top:1px solid var(--line)}}
+        .ls .fbar{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-xs)}
+        .ls .fbar label{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--fg-3);font-weight:600}
+        .ls .chip .x{cursor:pointer;font-weight:700;margin-left:2px}
+        .ls .stack{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--surface-3);gap:2px}.ls .stack i{display:block;height:100%}
+        .ls .bl{display:grid;grid-template-columns:14px minmax(0,1fr) 64px 110px 44px;gap:10px;align-items:center;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:13.5px}
+        .ls .bl:hover{background:var(--surface-2)}.ls .bl.on{background:var(--blue-soft)}
+        .ls .bl i{width:10px;height:10px;border-radius:3px;display:block}
+        .ls .bl>:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .ls .il{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:10px;align-items:center;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:13.5px}
+        .ls .il:hover{background:var(--surface-2)}.ls .il.on{background:var(--blue-soft)}
+        .ls .il .nm{font-weight:600;min-width:0;display:grid;gap:5px}.ls .il .nm>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ls .il .nm small{font-weight:400;color:var(--fg-3);margin-left:6px;font-size:12px}
+        .ls .il .bar{height:5px}
+        .ls .il>b{text-align:right;font-variant-numeric:tabular-nums}
+        .ls .t{table-layout:fixed;min-width:1080px}.ls .t th,.ls .t td{padding-left:10px;padding-right:10px}
+        .ls .t th{cursor:pointer;user-select:none;position:sticky;top:0;z-index:1}.ls .t th:hover{color:var(--blue-2)}
+        .ls .t td{overflow:hidden;text-overflow:ellipsis}
+        .ls .t td.txt,.ls .t th.txt{text-align:left}.ls .t td.c,.ls .t th.c{text-align:center}
+        .ls .t td.amt{font-weight:700}
+        .ls .exp{color:var(--red-2);font-weight:700}.ls .soon{color:var(--amber-2);font-weight:700}
+        .ls .bizhd{display:flex;gap:10px;align-items:center;padding:13px 20px;cursor:pointer;font-weight:700;font-size:15px}
+        .ls .bizhd small{font-weight:400;color:var(--fg-3);font-size:12.5px}
+        @media(max-width:820px){.ls .fbar label{flex:1 1 100%;flex-wrap:wrap}.ls .fbar .inp{flex:1 1 110px;min-width:0;width:auto!important}.ls .bl{grid-template-columns:14px minmax(0,1fr) 100px}.ls .bl>:nth-child(3),.ls .bl>:nth-child(5){display:none}}
       `}</style>
-      <div className="ls" style={{ display: 'grid', gap: 16 }}>
-        <div className="page-head" style={{ alignItems: 'flex-end' }}>
-          <div><h1>Lot별 재고조회</h1><div className="help">사업장별 LOT 재고와 유효기간을 봅니다. 유효기간이 가까운 재고부터 확인하세요.</div></div>
-          <span className="sp" />
-          <span className="help">{loaded ? `전체 ${fmt(all.length)}건` : '재고 데이터를 불러오는 중'}</span>
-        </div>
+      <PageHead title="재고" desc={`LOT별 재고와 유효기간입니다. 유효기간은 오늘(${fmtD(t0)}) 기준으로 계산합니다.`}>
+        <span className="help">{loaded ? `전체 ${fmt(all.length)} LOT` : ''}</span>
+      </PageHead>
 
-        <div className="fbar">
-          <label>품번·품명<input className="inp" style={{ width: 170 }} value={qItem} onChange={e => setQItem(e.target.value)} placeholder="검색" /></label>
-          <label>제조번호<input className="inp" style={{ width: 120 }} value={qLot} onChange={e => setQLot(e.target.value)} placeholder="LOT" /></label>
-          <label>입고일<input type="date" className="inp" value={from} onChange={e => setFrom(e.target.value)} /><span className="help">~</span><input type="date" className="inp" value={to} onChange={e => setTo(e.target.value)} /></label>
-          <label>유효기간<select className="inp" value={exp} onChange={e => setExp(e.target.value)}><option value="">전체</option><option value="0">이미 만료</option><option value="30">30일 이내</option><option value="90">90일 이내</option><option value="180">180일 이내</option></select></label>
-          {bizSel && <span className="chip on">{bizSel} <span className="x" onClick={() => setBizSel('')}>×</span></span>}
-          {itemSel && <span className="chip on">{itemSel} <span className="x" onClick={() => setItemSel('')}>×</span></span>}
-          <span className="sp" />
-          <span className="help">{fmt(rows.length)}건</span>
-          <button className="btn sm ghost" onClick={reset}>초기화</button>
-        </div>
-
-        {!loaded ? <div className="card"><div className="empty"><span className="spinner" /> 재고 데이터를 불러오는 중입니다.</div></div> : !rows.length ? <div className="card"><div className="empty">조회 조건에 해당하는 재고가 없습니다.</div></div> : (
-          <>
-            <div className="verdict">
-              <div>
-                <div className="l">재고금액 합계<HelpDot id="stock.verdict" /></div>
-                <div className="big">{kor(total)}</div>
-                <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · {fmt(rows.length)} LOT · 품목 {byItem.length}종 · 사업장 {byBiz.length}곳</div>
-                <div className="stack">{byBiz.map(([b, v], i) => <i key={b} title={`${b} ${fmt(v.amt)}원`} style={{ width: (total > 0 ? v.amt / total * 100 : 0) + '%', background: BIZ_COLORS[i % BIZ_COLORS.length] }} />)}</div>
-                <div className="lg">{byBiz.map(([b, v], i) => <span key={b} className={bizSel === b ? 'on' : ''} onClick={() => setBizSel(bizSel === b ? '' : b)}><i style={{ background: BIZ_COLORS[i % BIZ_COLORS.length] }} />{b} {kor(v.amt)} · {v.n}건</span>)}</div>
-              </div>
-              <div>
-                <div className="l">유효기간 점검<HelpDot id="stock.expiry" /> <span>오늘 {fmtD(t0)} 기준 · 누르면 해당 재고만</span></div>
-                <div className="warn">
-                  <div className="w" style={{ background: expired.length ? '#fdeaea' : 'var(--surface-2)' }} onClick={() => setExp(exp === '0' ? '' : '0')}><span>이미 만료 <b>{expired.length}</b> LOT</span><b className={expired.length ? 'exp' : ''}>{fmt(sum(expired))}원</b></div>
-                  <div className="w" style={{ background: soon.length ? '#fff4d6' : 'var(--surface-2)' }} onClick={() => setExp(exp === '30' ? '' : '30')}><span>30일 이내 만료 <b>{soon.length}</b> LOT</span><b className={soon.length ? 'soon' : ''}>{fmt(sum(soon))}원</b></div>
-                  <div className="w" style={{ background: 'var(--surface-2)' }} onClick={() => setExp(exp === '90' ? '' : '90')}><span>31~90일 이내 만료 <b>{soon90.length}</b> LOT</span><b>{fmt(sum(soon90))}원</b></div>
-                </div>
-                <div className="help" style={{ marginTop: 8 }}>만료·임박 재고 합계 {kor(sum(expired) + sum(soon))} — 전체의 {total > 0 ? Math.round((sum(expired) + sum(soon)) / total * 1000) / 10 : 0}%</div>
-              </div>
-              <div>
-                <div className="l">품목별 재고 TOP 10<HelpDot id="stock.items" /> <span>누르면 그 품목만</span></div>
-                <div className="rk" style={{ padding: '6px 0 0' }}>
-                  {byItem.length > 0 && <ListHead cls="r" cols={['품목 · 수량 · LOT 수', '>재고금액(원)']} style={{ gridTemplateColumns: 'minmax(0,1fr) 100px' }} />}
-                  {byItem.slice(0, 10).map(([k, v]) => <div key={k} className={'r' + (itemSel === k ? ' on' : '')} style={{ gridTemplateColumns: 'minmax(0,1fr) 100px' }} onClick={() => setItemSel(itemSel === k ? '' : k)}>
-                    <div><div className="nm">{k}<span className="help" style={{ marginLeft: 6 }}>{fmtF(v.qty)}{v.unit} · {v.n}LOT</span></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxI * 100)) + '%' }} /></div></div>
-                    <span className="n" style={{ fontWeight: 700 }}>{fmt(v.amt)}</span>
-                  </div>)}
-                </div>
-              </div>
-            </div>
-
-            {groups.map(([biz, list]) => {
-              const isOpen = open[biz] ?? true;
-              return (
-                <div className="card" key={biz}>
-                  <div className="bizhd" onClick={() => setOpen(o => ({ ...o, [biz]: !isOpen }))}><span style={{ color: 'var(--fg-3)', fontSize: 11 }}>{isOpen ? '▾' : '▸'}</span>{biz}<span className="help" style={{ fontWeight: 400 }}>{fmt(list.length)} LOT</span><span className="sp" /><span className="help">재고금액 <b className="num" style={{ color: 'var(--fg)' }}>{fmt(sum(list))}</b>원</span></div>
-                  {isOpen && <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto' }}><table>
-                    <thead><tr>{COLS.map(c => <th key={c.k} className={(c.num ? 'n' : '') + (c.center ? ' c' : '')} style={{ width: c.w }} onClick={() => setSort(s => ({ k: c.k, d: s.k === c.k ? (s.d === 1 ? -1 : 1) : (c.num ? -1 : 1) }))}>{c.label}{sort.k === c.k ? (sort.d === 1 ? ' ▲' : ' ▼') : ''}</th>)}</tr></thead>
-                    <tbody>{list.map((r, i) => <tr key={i}>{COLS.map(c => { const v = r[c.k]; let cls = (c.num ? 'n' : '') + (c.center ? ' c' : '') + (c.k === 'amt' ? ' amt' : ''); let txt: ReactNode = c.date ? fmtD(v) : c.num ? (c.float ? fmtF(v as number) : fmt(v as number)) : (String(v ?? '') || '-');
-                      if (c.k === 'valiDate' && r.left != null) { const w = r.left < 0 ? 'exp' : r.left <= 30 ? 'soon' : ''; cls += ' ' + w; txt = <>{txt}<span style={{ fontSize: 10, color: 'var(--fg-3)', fontWeight: 400 }}> ({r.left < 0 ? `만료 ${-r.left}일` : `D-${r.left}`})</span></>; }
-                      return <td key={c.k} className={cls} title={c.clip ? String(v) : undefined}>{txt}</td>; })}</tr>)}</tbody>
-                  </table></div>}
-                </div>
-              );
-            })}
-          </>
-        )}
+      <div className="fbar">
+        <label>품목<input className="inp" style={{ width: 170 }} value={qItem} onChange={e => setQItem(e.target.value)} placeholder="품번 또는 품명" /></label>
+        <label>LOT<input className="inp" style={{ width: 130 }} value={qLot} onChange={e => setQLot(e.target.value)} placeholder="LOT 번호" /></label>
+        <label>입고일<input type="date" className="inp" value={from} onChange={e => setFrom(e.target.value)} /><span className="help">~</span><input type="date" className="inp" value={to} onChange={e => setTo(e.target.value)} /></label>
+        <label>유효기간<select className="inp" value={exp} onChange={e => setExp(e.target.value)}><option value="">전체</option><option value="0">지난 것</option><option value="30">30일 안에 끝남</option><option value="90">90일 안에 끝남</option><option value="180">180일 안에 끝남</option></select></label>
+        {bizSel && <span className="chip on">{bizSel} <span className="x" onClick={() => setBizSel('')}>×</span></span>}
+        {itemSel && <span className="chip on">{itemSel} <span className="x" onClick={() => setItemSel('')}>×</span></span>}
+        <span className="sp" />
+        <span className="help">{fmt(rows.length)} LOT</span>
+        {filtered && <button className="btn sm ghost" onClick={reset}>조건 지우기</button>}
       </div>
+
+      {!loaded ? <Loading text="재고 데이터를 불러오는 중입니다." /> : !rows.length ? <Empty>조건에 맞는 재고가 없습니다.</Empty> : (
+        <>
+          <div className="stats">
+            <Stat label="재고 금액" help="stock.verdict" value={won(total)} keyColor="var(--blue)" sub={<>{fmt(rows.length)} LOT · 품목 {byItem.length}종</>} />
+            <Stat label="유효기간 지남" help="stock.expiry" value={won(expSum)} tone={expired.length ? 'neg' : undefined} sub={<>{expired.length} LOT · 누르면 이 재고만</>} onClick={() => setExp(exp === '0' ? '' : '0')} />
+            <Stat label="30일 안에 끝남" value={won(soonSum)} sub={<>{soon.length} LOT{total > 0 ? ` · 지난 것과 합쳐 전체의 ${Math.round((expSum + soonSum) / total * 1000) / 10}%` : ''}</>} onClick={() => setExp(exp === '30' ? '' : '30')} />
+            <Stat label="31 ~ 90일 안에 끝남" value={won(soon90Sum)} sub={<>{soon90.length} LOT</>} onClick={() => setExp(exp === '90' ? '' : '90')} />
+          </div>
+
+          <div className="g2">
+            <Card title="사업장별" desc="누르면 그 사업장만">
+              <div className="stack">{byBiz.map(([b, v], i) => <i key={b} title={`${b} ${fmt(v.amt)}`} style={{ width: (total > 0 ? v.amt / total * 100 : 0) + '%', background: PALETTE[i % PALETTE.length] }} />)}</div>
+              <div style={{ marginTop: 10 }}>
+                {byBiz.map(([b, v], i) => (
+                  <div key={b} className={'bl' + (bizSel === b ? ' on' : '')} onClick={() => setBizSel(bizSel === b ? '' : b)}>
+                    <i style={{ background: PALETTE[i % PALETTE.length] }} /><b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</b><span className="mut">{fmt(v.n)} LOT</span><b>{fmt(v.amt)}</b><span className="mut">{total > 0 ? Math.round(v.amt / total * 100) : 0}%</span>
+                  </div>))}
+              </div>
+            </Card>
+            <Card title="품목 상위 10" help="stock.items" desc="재고 금액 큰 순 · 누르면 그 품목만">
+              {byItem.slice(0, 10).map(([k, v]) => (
+                <div key={k} className={'il' + (itemSel === k ? ' on' : '')} onClick={() => setItemSel(itemSel === k ? '' : k)}>
+                  <span className="nm"><span>{k}<small>{fmtF(v.qty)}{v.unit} · {v.n} LOT</small></span><div className="bar"><i style={{ width: Math.max(2, Math.round(v.amt / maxI * 100)) + '%' }} /></div></span>
+                  <b>{fmt(v.amt)}</b>
+                </div>))}
+            </Card>
+          </div>
+
+          {groups.map(([biz, list]) => {
+            const isOpen = open[biz] ?? true;
+            return (
+              <section className="card" key={biz}>
+                <div className="bizhd" onClick={() => setOpen(o => ({ ...o, [biz]: !isOpen }))}><span style={{ color: 'var(--fg-3)', fontSize: 11 }}>{isOpen ? '▾' : '▸'}</span>{biz}<small>{fmt(list.length)} LOT · 열 이름을 누르면 정렬</small><span className="sp" /><small>재고 금액</small><span className="num">{fmt(sum(list))}</span></div>
+                {isOpen && <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto', borderTop: '1px solid var(--line)' }}><table className="t">
+                  <thead><tr>{COLS.map(c => <th key={c.k} className={c.center ? 'c' : c.num ? '' : 'txt'} style={{ width: c.w, color: sort.k === c.k ? 'var(--blue-2)' : undefined }} onClick={() => setSort(s => ({ k: c.k, d: s.k === c.k ? (s.d === 1 ? -1 : 1) : (c.num ? -1 : 1) }))}>{c.label}{sort.k === c.k ? (sort.d === 1 ? ' ▴' : ' ▾') : ''}</th>)}</tr></thead>
+                  <tbody>{list.map((r, i) => <tr key={i}>{COLS.map(c => { const v = r[c.k]; let cls = (c.center ? 'c' : c.num ? '' : 'txt') + (c.k === 'amt' ? ' amt' : ''); let txt: ReactNode = c.date ? fmtD(v) : c.num ? (c.float ? fmtF(v as number) : fmt(v as number)) : (String(v ?? '') || '-');
+                    if (c.k === 'valiDate' && r.left != null) { const w = r.left < 0 ? 'exp' : r.left <= 30 ? 'soon' : ''; cls += ' ' + w; txt = <>{txt}<span style={{ fontSize: 11, color: w ? undefined : 'var(--fg-3)', fontWeight: 400 }}> {r.left < 0 ? `${-r.left}일 지남` : `${r.left}일 남음`}</span></>; }
+                    return <td key={c.k} className={cls} title={c.clip ? String(v) : undefined}>{txt}</td>; })}</tr>)}</tbody>
+                </table></div>}
+              </section>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

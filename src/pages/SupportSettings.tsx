@@ -17,9 +17,8 @@ type Bridge = {
   save: () => void; applyEvery: () => void; revert: () => void; msg: () => { text: string; cls: string }; saving: () => boolean;
 };
 const B = () => (window as unknown as { KJHub?: { cfg?: { support?: Bridge } } }).KJHub?.cfg?.support;
-const SPLIT: Record<string, string> = { unit: '인원별 단가', head: '인원수 비례', dept: '부서별 균등', direct: '직접 입력' };
-const SPLIT_HELP: Record<string, string> = { unit: '금액 × 대상 부서 인원수', head: '금액을 인원수 비율로 나눔', dept: '금액을 부서 수로 균등 분할', direct: '부서마다 금액을 직접 입력' };
-const SCOPE: Record<string, string> = { all: '전체 부서', bu: '사업단위', dept: '부서 지정' };
+import { SPLIT_LABEL as SPLIT, SPLIT_HELP } from '../lib/terms';
+const SCOPE: Record<string, string> = { all: '전체 부서', bu: '본부', dept: '부서 지정' };
 const totalOf = (b: Bridge, t: Task) => b.taskShares(t).reduce((s, x) => s + x.amount, 0);
 
 export default function SupportSettings() {
@@ -44,7 +43,7 @@ export default function SupportSettings() {
   const mut = (fn: () => void) => { fn(); b!.touch(); };
   const qq = q.trim().toLowerCase();
 
-  if (!b) return <div className="page"><div className="card"><div className="empty"><span className="spinner" /> 지원 설정 모듈을 준비하는 중입니다.</div></div></div>;
+  if (!b) return <div className="page"><div className="card"><div className="empty"><span className="spinner" /> 지원 내역을 준비하는 중입니다.</div></div></div>;
   const deptAll = b.deptList(), buAll = b.buList();
   return (
     <div className="page brief" style={{ gap: 16, maxWidth: 1500 }}>
@@ -58,7 +57,7 @@ export default function SupportSettings() {
         .ss .r{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:8px;align-items:center;padding:3px 6px;border-radius:6px;font-size:12.5px;cursor:pointer}
         .ss .r:hover,.ss .r.on{background:var(--brand-soft)}
         .ss .r .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.ss .r .nm small{font-weight:400;color:var(--fg-3);margin-left:5px}
-        .ss .hb{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-top:3px}.ss .hb i{display:block;height:100%;border-radius:999px;background:#f5b400}
+        .ss .hb{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-top:3px}.ss .hb i{display:block;height:100%;border-radius:999px;background:#f5b301}
         .ss .n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700}
         .ss .gc{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
         .ss .gh{display:flex;gap:10px;align-items:center;padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -82,28 +81,28 @@ export default function SupportSettings() {
       `}</style>
       <div className="ss" style={{ display: 'grid', gap: 16 }}>
         <div className="page-head" style={{ alignItems: 'flex-end' }}>
-          <div><h1>지원 내역 설정</h1><div className="help">지원 부서가 어느 부서의 어떤 업무를 지원하는지 등록하고 비용을 정합니다. 지원 부서는 그 금액만큼 수익이, 받는 부서는 비용이 늘어납니다. 설정은 기준월별로 저장되고 없는 달은 이전 달을 승계합니다.</div></div>
+          <div><h1>지원 내역 설정</h1><div className="help">어느 부서가 어떤 업무로 어느 부서를 지원하는지와 금액을 정합니다. 해 준 부서는 배분 이익이, 받은 부서는 비용이 그만큼 늘어납니다. 기준월별로 저장하고, 설정이 없는 달은 가장 최근 달 내용을 씁니다.</div></div>
           <span className="sp" />
           <MonthPick value={month} options={opts} onChange={m => b.setMonth(m)} />
         </div>
 
         <div className="verdict">
           <div>
-            <div className="l">{ymLabel(month)} 지원 금액 합계<HelpDot id="set.support" /> <span className={own ? '' : ''} style={{ color: own ? '#2c7f2c' : '#9a6f00' }}>{own ? '· 이 달 설정' : src ? `· ${ymLabel(src)} 설정 승계 중` : '· 설정 없음'}</span></div>
+            <div className="l">{ymLabel(month)} 지원 금액 합계<HelpDot id="set.support" /> <span className={own ? '' : ''} style={{ color: own ? '#167a3a' : '#8d6100' }}>{own ? '· 이 달 설정' : src ? `· ${ymLabel(src)} 설정을 이어 씀` : '· 설정 없음'}</span></div>
             <div className="big">{kor(view.total)}</div>
-            <div className="help" style={{ marginTop: 4 }}>{fmt(view.total)}원 · 지원 부서 {draft.filter(g => g.dept).length}곳 · 업무 {view.tasks}건 · 받는 부서 {view.byRecv.length}곳</div>
-            <div className="help" style={{ marginTop: 8 }}>인원수는 월/부서별 인원 데이터의 {ymLabel(month)} 이하 가장 최근 월 값을 씁니다.</div>
+            <div className="help" style={{ marginTop: 4 }}>{fmt(view.total)} · 지원 부서 {draft.filter(g => g.dept).length}곳 · 업무 {view.tasks}건 · 받는 부서 {view.byRecv.length}곳</div>
+            <div className="help" style={{ marginTop: 8 }}>인원은 [월/부서별 인원] 데이터에서 {ymLabel(month)}까지 가장 최근 달 값을 씁니다.</div>
             <div className="help" style={{ marginTop: 4 }}>저장된 달: {b.savedMonths().map(ymLabel).join(', ') || '없음'}</div>
           </div>
           <div>
-            <div className="l">받는 부서별 부담액<HelpDot id="set.support" /> <span>지금 입력값 기준 미리보기 · 누르면 그 부서가 포함된 업무만 강조</span></div>
-            <div className="rk">{view.byRecv.length > 0 && <><ListHead cls="r" cols={['받는 부서 · 건수 · 비중 · 인원', '>부담액(원)']} /><ListHead cls="r lh2" cols={['받는 부서 · 건수 · 비중 · 인원', '>부담액(원)']} /></>}{view.byRecv.map(([d, v, n]) => <div key={d} className={'r' + (focus === d ? ' on' : '')} onClick={() => setFocus(focus === d ? '' : d)}><div><div className="nm">{d}<small>{n}건 · {view.total ? Math.round(v / view.total * 100) : 0}% · 인원 {b.headcountOf(d)}</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxR * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}
+            <div className="l">받는 부서별 부담액<HelpDot id="set.support" /> <span>지금 입력한 값으로 미리 보기 · 누르면 그 부서가 든 업무만 진하게</span></div>
+            <div className="rk">{view.byRecv.length > 0 && <><ListHead cls="r" cols={['받는 부서 · 건수 · 비중 · 인원', '>부담액']} /><ListHead cls="r lh2" cols={['받는 부서 · 건수 · 비중 · 인원', '>부담액']} /></>}{view.byRecv.map(([d, v, n]) => <div key={d} className={'r' + (focus === d ? ' on' : '')} onClick={() => setFocus(focus === d ? '' : d)}><div><div className="nm">{d}<small>{n}건 · {view.total ? Math.round(v / view.total * 100) : 0}% · 인원 {b.headcountOf(d)}</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxR * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}
               {!view.byRecv.length && <div className="empty">아직 지원 내역이 없습니다.</div>}</div>
           </div>
         </div>
 
         <div className="filters">
-          <input className="inp" style={{ width: 220 }} placeholder="업무명·부서명 검색" value={q} onChange={e => setQ(e.target.value)} />
+          <input className="inp" style={{ width: 220 }} placeholder="업무 · 부서 찾기" value={q} onChange={e => setQ(e.target.value)} />
           <span className="sp" />
           <button className="btn sm" onClick={() => mut(() => { draft.push({ dept: '', tasks: [] }); })}>+ 지원 부서 추가</button>
         </div>
@@ -117,55 +116,55 @@ export default function SupportSettings() {
             <div className="gc" key={gi}>
               <div className="gh">
                 <span className="help">지원 부서</span>
-                <select className="inp" value={g.dept} disabled={!editable} onChange={e => mut(() => { g.dept = e.target.value; })} style={{ fontWeight: 700 }}><option value="">부서 선택…</option>{deptAll.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                <span className="help">업무 {g.tasks.length}건 · 합계 <b className="num" style={{ color: 'var(--fg)' }}>{fmt(gsum)}</b>원</span>
+                <select className="inp" value={g.dept} disabled={!editable} onChange={e => mut(() => { g.dept = e.target.value; })} style={{ fontWeight: 700 }}><option value="">부서 고르기</option>{deptAll.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                <span className="help">업무 {g.tasks.length}건 · 합계 <b className="num" style={{ color: 'var(--fg)' }}>{fmt(gsum)}</b></span>
                 <span className="sp" />
                 {editable && <button className="btn sm" onClick={() => mut(() => { g.tasks.push({ task: '', desc: '', scope: 'all', buNames: [], deptNames: [], excludes: [], split: 'unit', amount: 0, detail: {} }); setOpenTask(gi + ':' + (g.tasks.length - 1)); })}>+ 업무 추가</button>}
-                {editable && <button className="btn sm ghost" onClick={async () => { if (await confirm('지원 부서 삭제', `[${g.dept || '미지정'}]의 지원 내역 ${g.tasks.length}건을 모두 삭제합니다. 저장하기 전까지는 되돌리기로 취소할 수 있습니다.`, { danger: true, okText: '삭제' })) mut(() => { draft.splice(gi, 1); }); }}>부서 삭제</button>}
+                {editable && <button className="btn sm ghost" onClick={async () => { if (await confirm('지원 부서 삭제', `[${g.dept || '부서 없음'}]의 지원 업무 ${g.tasks.length}건을 모두 지웁니다. 저장하기 전에는 [되돌리기]로 되살릴 수 있습니다.`, { danger: true, okText: '지우기' })) mut(() => { draft.splice(gi, 1); }); }}>부서 지우기</button>}
               </div>
               <div className="tbl-wrap"><table className="sst">
-                <thead><tr><th style={{ width: 200 }}>업무</th><th>설명</th><th style={{ width: 130 }}>대상</th><th style={{ width: 130 }}>나누는 방식</th><th className="n" style={{ width: 130 }}>금액</th><th className="n" style={{ width: 120 }}>총액</th><th style={{ width: 70 }}></th></tr></thead>
+                <thead><tr><th style={{ width: 200 }}>업무</th><th>설명</th><th style={{ width: 130 }}>받는 부서</th><th style={{ width: 130 }}>나누는 방식</th><th className="n" style={{ width: 130 }}>금액</th><th className="n" style={{ width: 120 }}>합계</th><th style={{ width: 70 }}></th></tr></thead>
                 <tbody>
                   {tasks.map(t => { const ti = g.tasks.indexOf(t); const key = gi + ':' + ti; const isOpen = openTask === key; const depts = b.taskDepts(t); const shares = b.taskShares(t); const tot = shares.reduce((s, x) => s + x.amount, 0); const dim = focus && !depts.includes(focus);
                     return [
                       <tr key={key} className="t" style={{ opacity: dim ? 0.4 : 1 }}>
-                        <td><input className="inp sm" style={{ width: '100%' }} value={t.task} disabled={!editable} placeholder="업무명" onChange={e => mut(() => { t.task = e.target.value; })} /></td>
-                        <td><input className="inp sm" style={{ width: '100%' }} value={t.desc} disabled={!editable} placeholder="설명(선택)" onChange={e => mut(() => { t.desc = e.target.value; })} /></td>
+                        <td><input className="inp sm" style={{ width: '100%' }} value={t.task} disabled={!editable} placeholder="업무 이름" onChange={e => mut(() => { t.task = e.target.value; })} /></td>
+                        <td><input className="inp sm" style={{ width: '100%' }} value={t.desc} disabled={!editable} placeholder="설명 (안 써도 됨)" onChange={e => mut(() => { t.desc = e.target.value; })} /></td>
                         <td><button className="btn sm" style={{ width: '100%' }} onClick={() => setOpenTask(isOpen ? null : key)}>{SCOPE[t.scope]} {depts.length}곳 {isOpen ? '▴' : '▾'}</button></td>
                         <td><select className="inp sm" style={{ width: '100%' }} value={t.split} disabled={!editable} title={SPLIT_HELP[t.split]} onChange={e => mut(() => { t.split = e.target.value as Task['split']; })}>{Object.entries(SPLIT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
                         <td className="n">{t.split === 'direct' ? <span className="help">부서별 입력</span> : <NumCell value={t.amount || null} onCommit={v => mut(() => { t.amount = v ?? 0; })} disabled={!editable} placeholder="0" width={110} />}</td>
                         <td className="n" style={{ fontWeight: 700 }}>{fmt(tot)}</td>
-                        <td style={{ textAlign: 'right' }}>{editable && <span className="x" title="업무 삭제" onClick={async () => { if (await confirm('업무 삭제', `[${t.task || '미지정'}] 업무를 삭제합니다.`, { danger: true, okText: '삭제' })) mut(() => { g.tasks.splice(ti, 1); }); }}>×</span>}</td>
+                        <td style={{ textAlign: 'right' }}>{editable && <span className="x" title="업무 삭제" onClick={async () => { if (await confirm('업무 삭제', `[${t.task || '이름 없음'}] 업무를 지웁니다.`, { danger: true, okText: '삭제' })) mut(() => { g.tasks.splice(ti, 1); }); }}>×</span>}</td>
                       </tr>,
                       isOpen && <tr key={key + 'd'}><td colSpan={7} className="dt">
                         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                          <span className="help">대상</span>
+                          <span className="help">받는 부서</span>
                           <span className="seg">{Object.entries(SCOPE).map(([k, v]) => <button key={k} className={t.scope === k ? 'on' : ''} disabled={!editable} onClick={() => mut(() => { t.scope = k as Task['scope']; t.buNames = []; t.deptNames = []; })}>{v}</button>)}</span>
-                          {t.scope === 'bu' && <select className="inp sm" value="" disabled={!editable} onChange={e => { const v = e.target.value; if (v) mut(() => { if (!t.buNames.includes(v)) t.buNames.push(v); }); }}><option value="">+ 사업단위 추가…</option>{buAll.filter(x => !t.buNames.includes(x)).map(x => <option key={x} value={x}>{x}</option>)}</select>}
-                          {t.scope === 'dept' && <select className="inp sm" value="" disabled={!editable} onChange={e => { const v = e.target.value; if (v) mut(() => { if (!t.deptNames.includes(v)) t.deptNames.push(v); }); }}><option value="">+ 부서 추가…</option>{deptAll.filter(x => !t.deptNames.includes(x)).map(x => <option key={x} value={x}>{x}</option>)}</select>}
+                          {t.scope === 'bu' && <select className="inp sm" value="" disabled={!editable} onChange={e => { const v = e.target.value; if (v) mut(() => { if (!t.buNames.includes(v)) t.buNames.push(v); }); }}><option value="">+ 본부 추가</option>{buAll.filter(x => !t.buNames.includes(x)).map(x => <option key={x} value={x}>{x}</option>)}</select>}
+                          {t.scope === 'dept' && <select className="inp sm" value="" disabled={!editable} onChange={e => { const v = e.target.value; if (v) mut(() => { if (!t.deptNames.includes(v)) t.deptNames.push(v); }); }}><option value="">+ 부서 추가</option>{deptAll.filter(x => !t.deptNames.includes(x)).map(x => <option key={x} value={x}>{x}</option>)}</select>}
                           {t.scope === 'bu' && t.buNames.map(x => <span key={x} className="chip">{x}{editable && <span className="x" onClick={() => mut(() => { t.buNames = t.buNames.filter(y => y !== x); })}>×</span>}</span>)}
-                          {t.excludes.length > 0 && <span className="help">제외 {t.excludes.length}곳 <span className="x" style={{ textDecoration: 'underline' }} onClick={() => mut(() => { t.excludes = []; })}>모두 해제</span></span>}
+                          {t.excludes.length > 0 && <span className="help">제외 {t.excludes.length}곳 <span className="x" style={{ textDecoration: 'underline' }} onClick={() => mut(() => { t.excludes = []; })}>모두 되돌리기</span></span>}
                           <span className="sp" />
-                          <span className="help">{SPLIT_HELP[t.split]} · 대상 {depts.length}곳 · 인원 {depts.reduce((s, d) => s + b.headcountOf(d), 0)}명 · 총액 <b style={{ color: 'var(--fg)' }}>{fmt(tot)}</b>원</span>
+                          <span className="help">{SPLIT_HELP[t.split]} · 받는 부서 {depts.length}곳 · 인원 {depts.reduce((s, d) => s + b.headcountOf(d), 0)}명 · 합계 <b style={{ color: 'var(--fg)' }}>{fmt(tot)}</b></span>
                         </div>
                         <div className="dgrid">
                           {shares.map(s => <div key={s.dept} className="dd" style={{ outline: focus === s.dept ? '2px solid var(--brand)' : undefined }}><span>{s.dept} <span className="help">({b.headcountOf(s.dept)})</span></span>
                             {t.split === 'direct' ? <NumCell value={t.detail[s.dept] ?? null} onCommit={v => mut(() => { if (v == null) delete t.detail[s.dept]; else t.detail[s.dept] = v; })} disabled={!editable} width={90} placeholder="0" /> : <b>{fmt(s.amount)}</b>}
-                            {editable && <span className="x" title="이 부서 제외" onClick={() => mut(() => { if (t.scope === 'dept') t.deptNames = t.deptNames.filter(y => y !== s.dept); else if (!t.excludes.includes(s.dept)) t.excludes.push(s.dept); })}>×</span>}</div>)}
-                          {t.excludes.map(d => <div key={'ex' + d} className="dd ex"><span>{d}</span><span className="help">제외</span>{editable && <span className="x" title="제외 해제" onClick={() => mut(() => { t.excludes = t.excludes.filter(y => y !== d); })}>↺</span>}</div>)}
+                            {editable && <span className="x" title="이 부서 빼기" onClick={() => mut(() => { if (t.scope === 'dept') t.deptNames = t.deptNames.filter(y => y !== s.dept); else if (!t.excludes.includes(s.dept)) t.excludes.push(s.dept); })}>×</span>}</div>)}
+                          {t.excludes.map(d => <div key={'ex' + d} className="dd ex"><span>{d}</span><span className="help">제외</span>{editable && <span className="x" title="다시 넣기" onClick={() => mut(() => { t.excludes = t.excludes.filter(y => y !== d); })}>↺</span>}</div>)}
                         </div>
                       </td></tr>,
                     ]; })}
-                  {!g.tasks.length && <tr><td colSpan={7} className="help" style={{ padding: 10 }}>업무가 없습니다. "+ 업무 추가"를 누르세요.</td></tr>}
+                  {!g.tasks.length && <tr><td colSpan={7} className="help" style={{ padding: 10 }}>업무가 없습니다. [+ 업무 추가]를 눌러 주세요.</td></tr>}
                 </tbody>
               </table></div>
             </div>
           );
         })}
-        {!draft.length && <div className="card"><div className="empty">{ymLabel(month)}에 등록된 지원 내역이 없습니다. "+ 지원 부서 추가"로 시작하세요.</div></div>}
+        {!draft.length && <div className="card"><div className="empty">{ymLabel(month)}에는 지원 내역이 없습니다. [+ 지원 부서 추가]로 시작해 주세요.</div></div>}
 
-        <SaveBar dirty={b.dirty()} saving={b.saving()} msg={b.msg()} onSave={() => b.save()} onRevert={() => b.revert()} saveLabel={`${ymLabel(month)} 저장`} note="저장은 선택한 기준월에만 적용됩니다.">
-          <button className="btn" onClick={async () => { if (await confirm('전체 일괄 적용', '현재 지원 내역을 최근 24개월 전체에 적용하고 저장합니다. 각 월에 이미 저장된 내역도 모두 덮어씁니다.', { okText: '적용하고 저장' })) b.applyEvery(); }}>전체 월 일괄 적용</button>
+        <SaveBar dirty={b.dirty()} saving={b.saving()} msg={b.msg()} onSave={() => b.save()} onRevert={() => b.revert()} saveLabel={`${ymLabel(month)} 저장`} note="고른 기준월에만 저장됩니다.">
+          <button className="btn" onClick={async () => { if (await confirm('모든 달에 적용', '지금 지원 내역을 최근 24개월 모두에 적용하고 저장합니다. 달마다 다르게 둔 내용도 이 내용으로 바뀝니다.', { okText: '적용하고 저장' })) b.applyEvery(); }}>모든 달에 적용</button>
         </SaveBar>
       </div>
     </div>

@@ -29,7 +29,7 @@ export const PATH_SCREEN: Record<string, string> = {
   '/dept-cost': 'dept-cost', '/dept-support': 'dept-support', '/trade': 'purchase-sales', '/matinput': 'mat-input', '/stock': 'lot-stock',
   '/settings/alloc': 'alloc-settings', '/settings/items': 'alloc-items', '/settings/materials': 'alloc-mats', '/settings/support': 'support',
   // 실현 수익 계산을 함께 쓰는 새 화면 (운영 지표 · 비용 배분 설정)
-  '/ops': 'bu-margin-real', '/settings/cost-alloc': 'bu-margin-real',
+  '/ops': 'bu-margin-real', '/settings/cost-alloc': 'bu-margin-real', '/home': 'bu-margin-real',
 };
 /** 화면 id → 경로 (같은 화면을 여러 경로가 쓰면 처음 것) */
 const SCREEN_PATH: Record<string, string> = {};
@@ -96,7 +96,7 @@ export function DataStatus() {
   const loading = keys.filter(k => meta[k]?.state === 'loading');
   const errors = keys.filter(k => meta[k]?.state === 'error');
   const ready = keys.filter(k => meta[k]?.state === 'ready');
-  const color = errors.length ? 'var(--neg)' : loading.length ? '#f5b400' : ready.length === keys.length ? '#3aa63a' : 'var(--fg-3)';
+  const color = errors.length ? 'var(--neg)' : loading.length ? '#f5b301' : ready.length === keys.length ? '#1f9d4d' : 'var(--fg-3)';
   const label = errors.length ? `오류 ${errors.length}` : loading.length ? '불러오는 중' : `데이터 ${ready.length}/${keys.length}`;
   return (
     <span className="dstat" style={{ position: 'relative', marginRight: 10 }}>
@@ -107,7 +107,7 @@ export function DataStatus() {
       {open && (
         <div className="dstat-pop" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, width: 300, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.08)', padding: 10, display: 'grid', gap: 6, fontSize: 12 }}>
           <div className="row" style={{ gap: 8, alignItems: 'center' }}><b>데이터 상태</b><span className="sp" /><button className="btn sm" onClick={async () => { setOpen(false); await cacheClear(); await loadAll(true); }} title="브라우저 캐시를 지우고 서버에서 다시 받습니다">다시 불러오기</button></div>
-          {keys.map(k => { const m = meta[k] || { state: 'idle', note: '' }; const c = m.state === 'ready' ? '#3aa63a' : m.state === 'error' ? 'var(--neg)' : m.state === 'loading' ? '#f5b400' : 'var(--line-2)';
+          {keys.map(k => { const m = meta[k] || { state: 'idle', note: '' }; const c = m.state === 'ready' ? '#1f9d4d' : m.state === 'error' ? 'var(--neg)' : m.state === 'loading' ? '#f5b301' : 'var(--line-2)';
             return <div key={k} className="row" style={{ gap: 8, alignItems: 'center' }}><i style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 99, background: c, flex: 'none' }} /><span style={{ width: 110, flex: 'none' }}>{DATASETS[k].label}</span><span className="help" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.state === 'ready' ? m.note : m.state === 'error' ? '오류: ' + m.note : m.state === 'loading' ? '불러오는 중' : '아직 안 받음'}</span></div>; })}
         </div>
       )}

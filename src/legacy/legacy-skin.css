@@ -19,9 +19,9 @@
 .legacy-scope .rounded-2xl{border-radius:12px!important}
 .legacy-scope .rounded-xl{border-radius:10px!important}
 .legacy-scope .shadow-lg,.legacy-scope .shadow-xl,.legacy-scope .shadow-md,.legacy-scope .shadow-sm,.legacy-scope .kj-prem-card{box-shadow:none!important}
-.legacy-scope .text-emerald-600,.legacy-scope .text-emerald-700,.legacy-scope .text-emerald-800{color:#2c7f2c!important}
+.legacy-scope .text-emerald-600,.legacy-scope .text-emerald-700,.legacy-scope .text-emerald-800{color:#167a3a!important}
 .legacy-scope .text-red-500,.legacy-scope .text-red-600,.legacy-scope .text-red-700{color:var(--neg)!important}
-.legacy-scope .text-amber-600{color:#9a6f00!important}
+.legacy-scope .text-amber-600{color:#8d6100!important}
 .legacy-scope input,.legacy-scope select,.legacy-scope textarea{font-family:var(--font-body);border-radius:8px!important}
 .legacy-scope input:focus,.legacy-scope select:focus{box-shadow:0 0 0 3px var(--brand-soft)}
 .legacy-scope button{font-family:var(--font-body)}

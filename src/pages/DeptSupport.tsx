@@ -1,121 +1,156 @@
-// 부서별 지원 내역 — 받는 부서 기준: 어떤 부서의 어떤 업무 지원을 받아 얼마를 부담하는가
-//   결론(총 부담액·부서별) → 지원 부서별 → 부서별 상세 표(기본 펼침). 금액은 기존 지원 모듈(__kjSupport.detailsFor)이 계산합니다.
-import { ListHead } from '../components/ListHead';
+// 부서 › 지원 내역 — 받은 지원(우리 부담)과 준 지원을 부서 기준으로 봅니다.
+//   금액은 지원 모듈(__kjSupport)이 [지원 내역 설정]대로 계산한 값을 그대로 씁니다.
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { fmt } from '../components/ui';
-import { HelpDot } from '../components/Help';
-import { kor } from '../components/charts';
-import { KJ, nrm, pick, ymLabel, type Raw } from '../lib/legacyData';
+import { MonthBars } from '../components/charts';
+import { PageHead, MonthNav, Stat, Card, Loading, Empty, Delta, won, swon, ymText } from '../components/kit';
+import { KJ, nrm, pick, type Raw } from '../lib/legacyData';
+import { useData } from '../lib/useData';
+import { SPLIT_LABEL } from '../lib/terms';
 
 type SRow = { from: string; task: string; desc: string; split: string; targetCount: number; amount: number };
 const SP = () => (window as unknown as { __kjSupport?: { ready: boolean; detailsFor: (dept: string, ym: string) => SRow[] } }).__kjSupport;
-const SPLIT_LABEL: Record<string, string> = { unit: '인원별(단가)', head: '인원별 배분', dept: '부서별 배분', direct: '직접입력' };
 const monthsBack = (end: string, n: number) => { const out: string[] = []; let y = +end.slice(0, 4), m = +end.slice(4, 6); for (let i = 0; i < n; i++) { out.unshift(y + ('0' + m).slice(-2)); m--; if (m === 0) { m = 12; y--; } } return out; };
-const shift = (ym: string, d: number) => { let y = +ym.slice(0, 4), m = +ym.slice(4, 6) + d; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return y + ('0' + m).slice(-2); };
+const sumAmt = (rs: SRow[]) => rs.reduce((a, r) => a + r.amount, 0);
 
 export default function DeptSupport() {
-  const { closeMonth } = useAuth();
-  const [tick, setTick] = useState(0);
-  useEffect(() => { const h = () => setTick(t => t + 1); ['kjhub:data', 'kjsupport:ready', 'kjhub:login'].forEach(e => window.addEventListener(e, h)); return () => ['kjhub:data', 'kjsupport:ready', 'kjhub:login'].forEach(e => window.removeEventListener(e, h)); }, []);
+  const { closeMonth, employee } = useAuth();
+  const [t0, setT0] = useState(0);
+  const { ver } = useData(['dept', 'headcount']);
+  useEffect(() => { const h = () => setT0(t => t + 1); ['kjsupport:ready', 'kjhub:login'].forEach(e => window.addEventListener(e, h)); return () => ['kjsupport:ready', 'kjhub:login'].forEach(e => window.removeEventListener(e, h)); }, []);
+  const tick = t0 + '|' + ver;
   const end0 = closeMonth || KJ()?.closeMonth?.() || '';
   const [ym, setYm] = useState(end0);
   useEffect(() => { if (end0) setYm(end0); }, [end0]);
   const [fromSel, setFromSel] = useState(''); const [deptSel, setDeptSel] = useState('');
-  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [openG, setOpenG] = useState<Record<string, boolean>>({});
 
-  const ready = !!SP()?.ready; // eslint-disable-line
-  // 대상 부서: 권한이 없으면(관리자) 전체
-  const mine = useMemo(() => {
+  const ready = !!SP()?.ready;
+  // 부서 목록과 볼 수 있는 부서 (일반 사용자인데 권한 정보가 아직 없으면 아무것도 보이지 않게)
+  const { all, mine, restricted } = useMemo(() => {
     const rows = (KJ()?.data?.dept || []) as Raw[]; const all: string[] = []; const seen = new Set<string>();
     rows.forEach(r => { const d = String(pick(r, ['DeptName', '부서명', '부서'])).trim(); if (d && !seen.has(d)) { seen.add(d); all.push(d); } });
     all.sort((a, b) => a.localeCompare(b, 'ko'));
-    const a = KJ()?.screenDepts?.('부서별 지원 내역'); if (a == null) return all;
+    const a = KJ()?.screenDepts?.('부서별 지원 내역');
+    if (a == null) return employee?.role === 'user' ? { all, mine: [] as string[], restricted: true } : { all, mine: all, restricted: false };
     const set = new Set(a.map(nrm)); const pref = a.filter(x => String(x).endsWith('*')).map(x => nrm(String(x).slice(0, -1)));
-    return all.filter(d => set.has(nrm(d)) || pref.some(p => p && nrm(d).indexOf(p) === 0));
-  }, [tick]); // eslint-disable-line
+    return { all, mine: all.filter(d => set.has(nrm(d)) || pref.some(p => p && nrm(d).indexOf(p) === 0)), restricted: true };
+  }, [tick, employee?.role]); // eslint-disable-line
   const hqOf = useMemo(() => { const m: Record<string, string> = {}; ((KJ()?.data?.dept || []) as Raw[]).forEach(r => { const d = String(pick(r, ['DeptName', '부서명', '부서'])).trim(); if (d) m[d] = String(pick(r, ['BizUnitName', '본부'])).trim(); }); return m; }, [tick]); // eslint-disable-line
 
+  // 받은 지원 (받는 부서별 상세)
   const detail = useMemo(() => { const sp = SP(); if (!sp?.ready || !ym) return {} as Record<string, SRow[]>; const o: Record<string, SRow[]> = {}; mine.forEach(d => { const r = sp.detailsFor(d, ym) || []; if (r.length) o[d] = r; }); return o; }, [mine, ym, tick]); // eslint-disable-line
-  const byDept = useMemo(() => Object.entries(detail).map(([d, r]) => [d, r.reduce((a, x) => a + x.amount, 0), r.length] as [string, number, number]).sort((a, b) => b[1] - a[1]), [detail]);
-  const byFrom = useMemo(() => { const m: Record<string, { amt: number; n: number; tasks: Set<string> }> = {}; Object.values(detail).forEach(rs => rs.forEach(r => { const o = m[r.from] || (m[r.from] = { amt: 0, n: 0, tasks: new Set() }); o.amt += r.amount; o.n++; o.tasks.add(r.task); })); return Object.entries(m).sort((a, b) => b[1].amt - a[1].amt); }, [detail]);
-  const total = byDept.reduce((a, b) => a + b[1], 0);
-  const trend = useMemo(() => { const sp = SP(); if (!sp?.ready || !ym) return [] as [string, number][]; return monthsBack(ym, 6).map(m => [m, mine.reduce((a, d) => a + (sp.detailsFor(d, m) || []).reduce((s, x) => s + x.amount, 0), 0)] as [string, number]); }, [mine, ym, tick]); // eslint-disable-line
-  const tMax = Math.max(1, ...trend.map(t => t[1]));
+  const scope = deptSel ? [deptSel] : mine;
+  const byDept = useMemo(() => Object.entries(detail).map(([d, r]) => [d, sumAmt(r), r.length] as [string, number, number]).sort((a, b) => b[1] - a[1]), [detail]);
+  const scoped = useMemo(() => scope.flatMap(d => (detail[d] || []).map(r => ({ ...r, to: d }))), [detail, scope.join('|')]); // eslint-disable-line
+  const byFrom = useMemo(() => { const m: Record<string, { amt: number; n: number; tasks: Set<string> }> = {}; scoped.forEach(r => { const o = m[r.from] || (m[r.from] = { amt: 0, n: 0, tasks: new Set() }); o.amt += r.amount; o.n++; o.tasks.add(r.task); }); return Object.entries(m).sort((a, b) => b[1].amt - a[1].amt); }, [scoped]);
+  const total = sumAmt(scoped);
+  const trend = useMemo(() => { const sp = SP(); if (!sp?.ready || !ym) return [] as [string, number][]; return monthsBack(ym, 6).map(m => [m, scope.reduce((a, d) => a + sumAmt(sp.detailsFor(d, m) || []), 0)] as [string, number]); }, [scope.join('|'), ym, tick]); // eslint-disable-line
   const prev = trend.length >= 2 ? trend[trend.length - 2][1] : null;
-  const shown = byDept.filter(([d]) => !deptSel || d === deptSel).map(([d]) => [d, (detail[d] || []).filter(r => !fromSel || r.from === fromSel)] as [string, SRow[]]).filter(x => x[1].length);
+  // 준 지원: 볼 수 있는 부서(또는 고른 부서)가 다른 부서에 해 준 지원. 회사 전체를 볼 때는 받은 지원과 같은 금액이라 따로 보이지 않습니다.
+  const focus = deptSel ? [deptSel] : restricted ? mine : null;
+  const given = useMemo(() => {
+    const sp = SP(); if (!sp?.ready || !ym || !focus) return [] as (SRow & { to: string })[];
+    const fs = new Set(focus.map(nrm)); const out: (SRow & { to: string })[] = [];
+    all.forEach(d => (sp.detailsFor(d, ym) || []).forEach(r => { if (fs.has(nrm(r.from))) out.push({ ...r, to: d }); }));
+    return out.sort((a, b) => b.amount - a.amount);
+  }, [focus?.join('|'), all, ym, tick]); // eslint-disable-line
+  const givenTotal = sumAmt(given);
+  const groups = (deptSel ? byDept.filter(x => x[0] === deptSel) : byDept).map(([d]) => [d, (detail[d] || []).filter(r => !fromSel || r.from === fromSel).slice().sort((a, b) => b.amount - a.amount)] as [string, SRow[]]).filter(x => x[1].length);
   const maxD = Math.max(1, ...byDept.map(x => x[1])), maxF = Math.max(1, ...byFrom.map(x => x[1].amt));
+  const multi = mine.length > 1;
+  const scopeL = deptSel || (restricted ? (mine.length === 1 ? mine[0] : '볼 수 있는 부서 전체') : '회사 전체');
 
   return (
-    <div className="page brief" style={{ gap: 16, maxWidth: 1500 }}>
+    <div className="page ds">
       <style>{`
-        .brief>*{min-width:0}
-        .ds .verdict{display:grid;grid-template-columns:1fr 1.2fr 1.2fr;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-        .ds .verdict>div{padding:16px 20px;min-width:0}.ds .verdict>div+div{border-left:1px solid var(--line)}
-        .ds .l{font-size:12px;color:var(--fg-3)}
-        .ds .big{font:800 34px/1.1 var(--font-num);letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums;color:#b0760a}
-        .ds .mini{display:flex;align-items:flex-end;gap:5px;height:60px;margin-top:10px}
-        .ds .mini .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0;cursor:pointer}
-        .ds .mini .col i{display:block;width:100%;border-radius:3px 3px 0 0;background:#f5b400;opacity:.55}.ds .mini .col.on i{opacity:1}
-        .ds .mini .col small{font-size:10px;color:var(--fg-3);margin-top:3px;white-space:nowrap}
-        .ds .rk{display:grid;gap:2px;margin-top:6px}
-        .ds .r{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}
-        .ds .r:hover{background:var(--surface-2)}.ds .r.on{background:var(--brand-soft)}
-        .ds .r .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.ds .r .nm small{font-weight:400;color:var(--fg-3);margin-left:5px}
-        .ds .hb{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-top:3px}.ds .hb i{display:block;height:100%;border-radius:999px;background:#f5b400}
-        .ds .n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:700}
-        .ds table{width:100%;border-collapse:collapse;font-size:12.5px}
-        .ds th{text-align:left;color:var(--fg-3);font-weight:500;font-size:11.5px;padding:7px 10px;border-bottom:2px solid var(--line);white-space:nowrap}
-        .ds td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-        .ds td.n,.ds th.n{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
-        .ds .dhd{display:flex;gap:10px;align-items:center;padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line);cursor:pointer;font-weight:700;font-size:13px}
-        @media(max-width:1000px){.ds .verdict{grid-template-columns:1fr}.ds .verdict>div+div{border-left:0;border-top:1px solid var(--line)}}
+        .ds .sl{display:grid;grid-template-columns:minmax(0,1fr) 104px 40px;gap:10px;align-items:center;font-size:13.5px;padding:7px 8px;border-radius:8px;cursor:pointer}
+        .ds .sl:hover{background:var(--surface-2)}.ds .sl.on{background:var(--blue-soft)}
+        .ds .sl .nm{font-weight:600;min-width:0;display:grid;gap:5px}.ds .sl .nm>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ds .sl .nm small{font-weight:400;color:var(--fg-3);margin-left:6px;font-size:12px}
+        .ds .sl .bar{height:5px}
+        .ds .sl>:nth-child(n+2){text-align:right;white-space:nowrap}.ds .sl>:nth-child(3){font-size:12.5px}
+        .ds .sl.h{cursor:default;font-size:12px;color:var(--fg-3);font-weight:600;border-bottom:1px solid var(--line);border-radius:0;padding-bottom:6px}.ds .sl.h:hover{background:none}
+        .ds .t td.l{white-space:normal}
+        .ds .t tr.grp td{background:var(--surface-2);font-weight:700;cursor:pointer}
+        .ds .chip .x{cursor:pointer;font-weight:700;margin-left:2px}
+        .ds .g21{align-items:stretch}
       `}</style>
-      <div className="ds" style={{ display: 'grid', gap: 16 }}>
-        <div className="page-head" style={{ alignItems: 'flex-end' }}>
-          <div><h1>부서별 지원 내역</h1><div className="help">지원 받는 부서 기준으로, 어느 부서의 어떤 업무 지원을 받아 얼마를 부담하는지 봅니다. 이 부담액은 부서 비용에 더해집니다.</div></div>
-          <span className="sp" />
-          <span className="seg"><button onClick={() => ym && setYm(shift(ym, -1))}>‹</button></span>
-          <input type="month" className="inp" min="2025-01" value={ymLabel(ym)} onChange={e => setYm(e.target.value.replace('-', ''))} />
-          <span className="seg"><button onClick={() => ym && setYm(shift(ym, 1))}>›</button></span>
-        </div>
+      <PageHead title="지원 내역" desc="다른 부서에서 받은 지원과 우리가 해 준 지원입니다. 받은 지원은 부서 비용에, 해 준 지원은 배분 이익에 더해집니다.">
+        <MonthNav value={ym ? ym.slice(0, 4) + '-' + ym.slice(4, 6) : ''} onChange={v => setYm(v.replace('-', ''))} />
+      </PageHead>
 
-        {!ready ? <div className="card"><div className="empty"><span className="spinner" /> 지원 내역을 불러오는 중입니다.</div></div> : !mine.length ? <div className="card"><div className="empty">조회 권한이 있는 부서가 없습니다.</div></div> : !byDept.length ? <div className="card"><div className="empty">{ymLabel(ym)} 기준으로 받는 지원 내역이 없습니다.</div></div> : (
-          <>
-            <div className="verdict">
-              <div>
-                <div className="l">{ymLabel(ym)} 지원 부담액 합계<HelpDot id="support.view" /></div>
-                <div className="big">{kor(total)}</div>
-                <div className="help" style={{ marginTop: 4 }}>{fmt(total)}원 · 받는 부서 {byDept.length}곳 · 지원 {Object.values(detail).reduce((a, r) => a + r.length, 0)}건{prev != null && prev > 0 && <> · 전월 대비 <b style={{ color: total - prev > 0 ? 'var(--neg)' : '#2c7f2c' }}>{total - prev >= 0 ? '+' : ''}{Math.round((total - prev) / prev * 1000) / 10}%</b></>}</div>
-                <div className="mini">{trend.map(([m, v]) => <div key={m} className={'col' + (m === ym ? ' on' : '')} title={`${ymLabel(m)} · ${fmt(v)}원`} onClick={() => setYm(m)}><i style={{ height: Math.max(2, Math.round(v / tMax * 44)) }} /><small>{+m.slice(4)}월</small></div>)}</div>
-              </div>
-              <div>
-                <div className="l">받는 부서별 부담액<HelpDot id="support.view" /> <span>누르면 그 부서만</span></div>
-                <div className="rk">{byDept.length > 0 && <ListHead cls="r" cols={['받는 부서 · 본부 · 건수 · 비중', '>부담액(원)']} />}{byDept.slice(0, 12).map(([d, v, n]) => <div key={d} className={'r' + (deptSel === d ? ' on' : '')} onClick={() => setDeptSel(deptSel === d ? '' : d)}><div><div className="nm">{d}<small>{hqOf[d]} · {n}건 · {total > 0 ? Math.round(v / total * 100) : 0}%</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%' }} /></div></div><span className="n">{fmt(v)}</span></div>)}</div>
-              </div>
-              <div>
-                <div className="l">지원하는 부서별<HelpDot id="support.view" /> <span>누르면 그 부서가 준 지원만</span></div>
-                <div className="rk">{byFrom.length > 0 && <ListHead cls="r" cols={['지원하는 부서 · 업무 수 · 건수', '>지원 금액(원)']} />}{byFrom.slice(0, 12).map(([f, v]) => <div key={f} className={'r' + (fromSel === f ? ' on' : '')} onClick={() => setFromSel(fromSel === f ? '' : f)}><div><div className="nm">{f}<small>업무 {v.tasks.size}개 · {v.n}건</small></div><div className="hb"><i style={{ width: Math.max(2, Math.round(v.amt / maxF * 100)) + '%', background: '#1f6fe8' }} /></div></div><span className="n">{fmt(v.amt)}</span></div>)}</div>
-              </div>
-            </div>
+      {!ready ? <Loading text="지원 내역을 불러오는 중입니다." />
+        : !mine.length ? <Empty>볼 수 있는 부서가 없습니다. 관리자에게 권한을 요청해 주세요.</Empty>
+        : !byDept.length && !given.length ? <Empty>{ymText(ym)}에는 지원 내역이 없습니다.</Empty> : (
+        <>
+          {(deptSel || fromSel) && <div className="row">{deptSel && <span className="chip on">{deptSel} <span className="x" onClick={() => setDeptSel('')}>×</span></span>}{fromSel && <span className="chip on">지원 부서: {fromSel} <span className="x" onClick={() => setFromSel('')}>×</span></span>}<button className="btn sm ghost" onClick={() => { setDeptSel(''); setFromSel(''); }}>조건 지우기</button></div>}
 
-            {(deptSel || fromSel) && <div className="filters">{deptSel && <span className="chip on">{deptSel} <span className="x" onClick={() => setDeptSel('')}>×</span></span>}{fromSel && <span className="chip on">지원 부서 {fromSel} <span className="x" onClick={() => setFromSel('')}>×</span></span>}<span className="sp" /><button className="btn sm ghost" onClick={() => { setDeptSel(''); setFromSel(''); }}>조건 지우기</button></div>}
+          <div className="stats">
+            <Stat label={`${+ym.slice(4)}월 받은 지원`} help="support.view" value={won(total)} keyColor="var(--orange)" sub={<>{scopeL} · {scoped.length}건 · 비용에 더해짐</>} />
+            <Stat label="전월 대비" value={prev == null ? '-' : (total - prev > 0 ? '+' : total - prev < 0 ? '−' : '') + won(Math.abs(total - prev))} tone={prev == null || total === prev ? undefined : total > prev ? 'neg' : 'pos'} sub={prev == null ? undefined : <>전월 {won(prev)} <Delta cur={total} prev={prev} invert mode="pct" /></>} />
+            {focus ? <>
+              <Stat label={`${+ym.slice(4)}월 해 준 지원`} value={won(givenTotal)} sub={<>{given.length}건 · 배분 이익에 더해짐</>} />
+              <Stat label="차이 (해 준 − 받은)" value={swon(givenTotal - total)} tone={givenTotal - total > 0 ? 'pos' : givenTotal - total < 0 ? 'neg' : undefined} sub="+ 이면 손익에 보탬" />
+            </> : <>
+              <Stat label="지원 받는 부서" value={byDept.length} unit="곳" sub={`지원 ${scoped.length}건`} />
+              <Stat label="지원하는 부서" value={byFrom.length} unit="곳" sub={byFrom[0] ? `가장 큰 곳 ${byFrom[0][0]}` : undefined} />
+            </>}
+          </div>
 
-            {shown.map(([d, rows]) => {
-              const isOpen = open[d] ?? true; const sum = rows.reduce((a, r) => a + r.amount, 0);
-              return (
-                <div className="card" key={d}>
-                  <div className="dhd" onClick={() => setOpen(o => ({ ...o, [d]: !isOpen }))}><span style={{ color: 'var(--fg-3)', fontSize: 11 }}>{isOpen ? '▾' : '▸'}</span>{d}<span className="help" style={{ fontWeight: 400 }}>{hqOf[d]} · 지원 {rows.length}건</span><span className="sp" /><span className="help">부담 합계 <b className="num" style={{ color: 'var(--fg)' }}>{fmt(sum)}</b>원</span></div>
-                  {isOpen && <div className="tbl-wrap"><table className="dst">
-                    <thead><tr><th style={{ width: 160 }}>지원 부서</th><th style={{ width: 200 }}>업무</th><th>설명</th><th style={{ width: 120 }}>형식</th><th style={{ width: 90 }}>대상</th><th className="n" style={{ width: 130 }}>우리 부담액</th></tr></thead>
-                    <tbody>{rows.slice().sort((a, b) => b.amount - a.amount).map((r, i) => <tr key={i}><td style={{ fontWeight: 600 }}>{r.from}</td><td>{r.task}</td><td className="help">{r.desc || '-'}</td><td className="help">{SPLIT_LABEL[r.split] || r.split}</td><td className="help">{r.targetCount}개 부서</td><td className="n" style={{ fontWeight: 700 }}>{fmt(r.amount)}</td></tr>)}</tbody>
-                  </table></div>}
-                </div>
-              );
-            })}
-          </>
-        )}
-      </div>
+          <div className="g21">
+            <Card title="받은 지원 추이" desc="최근 6개월 · 누르면 그 달">
+              <MonthBars items={trend.map(([m, v]) => ({ m, v }))} mode="orange" height={210} sel={[ym]} onPick={setYm} label="월별 받은 지원" />
+            </Card>
+            <Card title="지원하는 부서" desc="누르면 그 부서가 해 준 지원만">
+              {byFrom.length ? <>
+                <div className="sl h"><span>부서 · 업무 수</span><span>금액</span><span>비중</span></div>
+                {byFrom.slice(0, 10).map(([f, v]) => (
+                  <div key={f} className={'sl' + (fromSel === f ? ' on' : '')} onClick={() => setFromSel(fromSel === f ? '' : f)}>
+                    <span className="nm"><span>{f}<small>업무 {v.tasks.size}개</small></span><div className="bar"><i style={{ width: Math.max(2, Math.round(v.amt / maxF * 100)) + '%' }} /></div></span>
+                    <b className="num">{fmt(v.amt)}</b><span className="mut">{total > 0 ? Math.round(v.amt / total * 100) : 0}%</span>
+                  </div>))}
+              </> : <div className="empty">받은 지원이 없습니다.</div>}
+            </Card>
+          </div>
+
+          {multi && !deptSel && byDept.length > 1 && (
+            <Card title="받는 부서" desc="누르면 그 부서만">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: '0 24px' }}>
+                {byDept.map(([d, v, n]) => (
+                  <div key={d} className="sl" onClick={() => setDeptSel(d)}>
+                    <span className="nm"><span>{d}<small>{hqOf[d]} · {n}건</small></span><div className="bar"><i style={{ width: Math.max(2, Math.round(v / maxD * 100)) + '%', background: 'var(--orange)' }} /></div></span>
+                    <b className="num">{fmt(v)}</b><span className="mut">{total > 0 ? Math.round(v / total * 100) : 0}%</span>
+                  </div>))}
+              </div>
+            </Card>
+          )}
+
+          <Card title="받은 지원" desc={`${ymText(ym)} · ${scopeL}${fromSel ? ' · ' + fromSel : ''}${multi && groups.length > 3 ? ' · 부서 줄을 누르면 펼쳐집니다' : ''}`} flush>
+            {groups.length ? <div className="tbl-wrap"><table className="t">
+              <thead><tr><th>지원 부서</th><th className="l">업무</th><th className="l">설명</th><th className="l">나누는 방식</th><th>받는 부서 수</th><th>우리 부담</th></tr></thead>
+              <tbody>{groups.flatMap(([d, rows]) => {
+                const isOpen = openG[d] ?? (!multi || groups.length <= 3);
+                return [
+                  ...(multi ? [<tr key={d} className="grp" onClick={() => setOpenG(o => ({ ...o, [d]: !isOpen }))}><td colSpan={5}><span className="caret">{isOpen ? '▾' : '▸'}</span>{d} <small>{hqOf[d]} · {rows.length}건</small></td><td>{fmt(sumAmt(rows))}</td></tr>] : []),
+                  ...(isOpen ? rows.map((r, i) => <tr key={d + i}><td style={multi ? { paddingLeft: 28 } : undefined}><b>{r.from}</b></td><td className="l">{r.task}</td><td className="l mut">{r.desc || '-'}</td><td className="l mut">{SPLIT_LABEL[r.split] || r.split}</td><td className="mut">{r.targetCount}곳</td><td><b>{fmt(r.amount)}</b></td></tr>) : []),
+                ];
+              })}
+              <tr className="total"><td colSpan={5}>합계</td><td>{fmt(groups.reduce((a, g) => a + sumAmt(g[1]), 0))}</td></tr></tbody>
+            </table></div> : <div className="empty">조건에 맞는 지원이 없습니다.</div>}
+          </Card>
+
+          {focus && (
+            <Card title="해 준 지원" desc={`${ymText(ym)} · ${scopeL}이(가) 다른 부서에 해 준 지원`} flush>
+              {given.length ? <div className="tbl-wrap"><table className="t">
+                <thead><tr><th>받는 부서</th>{focus.length > 1 && <th className="l">지원 부서</th>}<th className="l">업무</th><th className="l">나누는 방식</th><th>금액</th></tr></thead>
+                <tbody>{given.map((r, i) => <tr key={i}><td><b>{r.to}</b> <small>{hqOf[r.to]}</small></td>{focus.length > 1 && <td className="l">{r.from}</td>}<td className="l">{r.task}</td><td className="l mut">{SPLIT_LABEL[r.split] || r.split}</td><td><b>{fmt(r.amount)}</b></td></tr>)}
+                <tr className="total"><td colSpan={focus.length > 1 ? 4 : 3}>합계</td><td>{fmt(givenTotal)}</td></tr></tbody>
+              </table></div> : <div className="empty">해 준 지원이 없습니다.</div>}
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

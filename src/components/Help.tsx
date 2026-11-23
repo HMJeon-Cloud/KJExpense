@@ -1,4 +1,4 @@
-// 도움말 — 표·그래프 제목 옆의 작은 (?) 를 누르면 "무엇을 · 어디서 · 어떻게 계산" 창이 뜹니다.
+// 도움말 — 제목 옆의 작은 (?) 를 누르면 뜻과 핵심 계산을 먼저 보여 주고, [자세히 보기]로 쓰는 데이터·세부 기준을 펼칩니다.
 //   <HelpDot id="trade.verdict" />   ·   기존 화면(legacy)에서는 window.KJHub.openHelp('id')
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -11,7 +11,7 @@ export function openHelp(id: string) { window.dispatchEvent(new CustomEvent(EVT,
 export function HelpDot({ id, style }: { id: string; style?: React.CSSProperties }) {
   if (!HELP[id]) return null;
   return (
-    <button type="button" className="helpdot" aria-label={'도움말: ' + HELP[id].title} title="이 값은 어떻게 계산되나요?"
+    <button type="button" className="helpdot" aria-label={'도움말: ' + HELP[id].title} title="어떻게 계산한 값인가요?"
       onClick={e => { e.stopPropagation(); openHelp(id); }} style={style}>?</button>
   );
 }
@@ -26,7 +26,7 @@ export function HelpHost() {
     const h = (e: Event) => setId((e as CustomEvent).detail?.id ?? null);
     window.addEventListener(EVT, h);
     const w = window as unknown as { KJHub?: Record<string, unknown> };
-    w.KJHub = w.KJHub || {}; w.KJHub.openHelp = openHelp; // 기존 화면(구매/판매 LOT 상세)에서 사용
+    w.KJHub = w.KJHub || {}; w.KJHub.openHelp = openHelp; // 기존 화면(구매 · 판매 LOT 내역)에서 사용
     return () => window.removeEventListener(EVT, h);
   }, []);
   useEffect(() => {
@@ -35,40 +35,48 @@ export function HelpHost() {
     document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k);
   }, [id]);
   const d = id ? HELP[id] : null;
+  const [more, setMore] = useState(false);
+  useEffect(() => { setMore(false); }, [id]);
+  const KEY = 4;   // 먼저 보여 줄 계산 줄 수
+  const rel = d?.related?.filter(r => isAdmin || !r.path.startsWith('/settings')) || [];
   return (
     <>
       <style>{`
-        .helpdot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;border:1px solid color-mix(in srgb,var(--brand) 45%,var(--line-2));background:var(--brand-soft);color:var(--brand);font:700 11px/1 var(--font-num);cursor:pointer;padding:0;margin-left:6px;vertical-align:middle;flex:none;transition:all .12s}
-        .helpdot:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
-        .hlp-ov{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.38);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
-        .hlp{width:100%;max-width:680px;background:var(--surface);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.2);overflow:hidden}
-        .hlp-hd{display:flex;gap:10px;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line);background:var(--surface-2)}
-        .hlp-hd h3{margin:0;font-size:16px;font-weight:700}
-        .hlp-hd .x{margin-left:auto;border:0;background:transparent;font-size:20px;line-height:1;color:var(--fg-3);cursor:pointer;padding:2px 6px;border-radius:6px}
-        .hlp-hd .x:hover{background:var(--line)}
-        .hlp-bd{padding:16px 20px 20px;display:grid;gap:16px;font-size:13.5px;line-height:1.6}
-        .hlp-sec h4{margin:0 0 6px;font-size:12px;font-weight:700;color:var(--brand);letter-spacing:.02em}
-        .hlp-src{width:100%;border-collapse:collapse;font-size:12.5px}
+        .helpdot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;border:1px solid var(--blue-line);background:var(--blue-soft);color:var(--blue-2);font-weight:700;font-size:11px;line-height:1;cursor:pointer;padding:0;margin-left:6px;vertical-align:middle;flex:none;transition:background .12s,border-color .12s}
+        .helpdot:hover{border-color:var(--blue);background:#dbe9ff}
+        .hlp-ov{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.42);display:flex;align-items:flex-start;justify-content:center;padding:7vh 16px;overflow:auto}
+        .hlp{width:100%;max-width:640px;background:var(--surface);border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.22);overflow:hidden}
+        .hlp-hd{display:flex;gap:10px;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+        .hlp-hd h3{margin:0;font-size:16.5px;font-weight:700}
+        .hlp-hd .x{margin-left:auto;border:0;background:transparent;font-size:22px;line-height:1;color:var(--fg-3);cursor:pointer;padding:2px 8px;border-radius:8px}
+        .hlp-hd .x:hover{background:var(--surface-3)}
+        .hlp-bd{padding:18px 20px 20px;display:grid;gap:16px;font-size:14px;line-height:1.65}
+        .hlp-what{margin:0;color:var(--fg)}
+        .hlp-sec h4{margin:0 0 6px;font-size:12.5px;font-weight:700;color:var(--fg-3)}
+        .hlp-src{width:100%;border-collapse:collapse;font-size:13px}
         .hlp-src td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
         .hlp-src td:first-child{white-space:nowrap;font-weight:600;width:1%}
         .hlp-src td:last-child{color:var(--fg-2)}
-        .hlp-calc{margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;display:grid;gap:4px;font-size:12.5px}
+        .hlp-calc{margin:0;padding:12px 14px;background:var(--surface-2);border-radius:10px;display:grid;gap:5px;font-size:13px}
         .hlp-calc div{white-space:pre-wrap}
-        .hlp-notes{margin:0;padding-left:18px;list-style:disc;color:var(--fg-2);font-size:12.5px;display:grid;gap:3px}
+        .hlp-notes{margin:0;padding-left:18px;list-style:disc;color:var(--fg-2);font-size:13px;display:grid;gap:4px}
         .hlp-rel{display:flex;gap:6px;flex-wrap:wrap}
       `}</style>
       {d && (
         <div className="hlp-ov" onMouseDown={e => { if (e.target === e.currentTarget) setId(null); }}>
           <div className="hlp" role="dialog" aria-modal="true" aria-label={d.title}>
-            <div className="hlp-hd"><span className="helpdot" style={{ margin: 0, cursor: 'default' }}>?</span><h3>{d.title}</h3><button className="x" onClick={() => setId(null)} aria-label="닫기">×</button></div>
+            <div className="hlp-hd"><h3>{d.title}</h3><button className="x" onClick={() => setId(null)} aria-label="닫기">×</button></div>
             <div className="hlp-bd">
-              <div className="hlp-sec"><h4>무엇을 보여주나</h4><div>{d.what}</div></div>
-              <div className="hlp-sec"><h4>데이터 출처</h4>
-                <table className="hlp-src"><tbody>{d.sources.map((s, i) => <tr key={i}><td>{s.ds}</td><td>{s.cols}</td></tr>)}</tbody></table>
-              </div>
-              <div className="hlp-sec"><h4>계산식</h4><div className="hlp-calc">{d.calc.map((c, i) => <div key={i}>{c.startsWith('  ') ? c : '• ' + c}</div>)}</div></div>
-              {d.notes && d.notes.length > 0 && <div className="hlp-sec"><h4>기준 · 주의</h4><ul className="hlp-notes">{d.notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>}
-              {d.related && d.related.length > 0 && (isAdmin || d.related.some(r => !r.path.startsWith('/settings'))) && <div className="hlp-sec"><h4>관련 화면</h4><div className="hlp-rel">{d.related.filter(r => isAdmin || !r.path.startsWith('/settings')).map(r => <button key={r.path} className="btn sm" onClick={() => { setId(null); nav(r.path); }}>{r.label} →</button>)}</div></div>}
+              <p className="hlp-what">{d.what}</p>
+              <div className="hlp-sec"><h4>계산</h4><div className="hlp-calc">{(more ? d.calc : d.calc.slice(0, KEY)).map((c, i) => <div key={i}>{c.startsWith('  ') ? c : '• ' + c}</div>)}</div></div>
+              {!more && <div><button className="btn sm" onClick={() => setMore(true)}>자세히 보기{d.calc.length > KEY ? ` · 계산 ${d.calc.length - KEY}줄 더` : ''} · 쓰는 데이터{d.notes?.length ? ' · 세부 기준' : ''}</button></div>}
+              {more && <>
+                <div className="hlp-sec"><h4>쓰는 데이터</h4>
+                  <table className="hlp-src"><tbody>{d.sources.map((s, i) => <tr key={i}><td>{s.ds}</td><td>{s.cols}</td></tr>)}</tbody></table>
+                </div>
+                {d.notes && d.notes.length > 0 && <div className="hlp-sec"><h4>세부 기준</h4><ul className="hlp-notes">{d.notes.map((n, i) => <li key={i}>{n}</li>)}</ul></div>}
+              </>}
+              {rel.length > 0 && <div className="hlp-sec"><h4>관련 화면</h4><div className="hlp-rel">{rel.map(r => <button key={r.path} className="btn sm" onClick={() => { setId(null); nav(r.path); }}>{r.label} →</button>)}</div></div>}
             </div>
           </div>
         </div>

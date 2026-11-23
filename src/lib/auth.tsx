@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!s) { setEmployee(null); return; }
     const { data } = await supabase.from('employees').select('*').eq('auth_uid', s.user.id).maybeSingle();
     const emp = (data as Employee) ?? null;
-    if (emp && !emp.active) { await supabase.auth.signOut(); setEmployee(null); throw new Error('비활성 처리된 계정입니다. 관리자에게 문의하세요.'); }
+    if (emp && !emp.active) { await supabase.auth.signOut(); setEmployee(null); throw new Error('비활성 처리된 계정입니다. 관리자에게 문의해 주세요.'); }
     setEmployee(emp);
     const { data: cm } = await supabase.from('config').select('value').eq('key', 'closeMonth').maybeSingle();
     setCloseMonth(typeof cm?.value === 'string' ? cm.value : '');
