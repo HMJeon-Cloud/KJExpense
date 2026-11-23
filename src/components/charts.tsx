@@ -227,10 +227,13 @@ export function MonthBars({ items, mode = 'blue', height = 170, fmtV = kor, labe
 /** 증감 다리(워터폴): 시작 → 요인들 → 끝.  steps[].v 는 영향 금액(+/−) */
 export function Waterfall({ start, end, steps, height = 190 }: { start: { label: string; v: number }; end: { label: string; v: number }; steps: { label: string; v: number }[]; height?: number }) {
   const [box, bw0] = useBoxWidth(520);
-  const W = Math.max(280, bw0), H = height, top = 22, bottom = 36, pad = 6;
+  const pad = 6, top = 22;
   const cols: { label: string; a: number; b: number; kind: 'tot' | 'step' }[] = [{ label: start.label, a: 0, b: start.v, kind: 'tot' }];
   let acc = start.v; steps.forEach(s => { cols.push({ label: s.label, a: acc, b: acc + s.v, kind: 'step' }); acc += s.v; });
   cols.push({ label: end.label, a: 0, b: end.v, kind: 'tot' });
+  // 값 글씨가 막대 아래에 붙는 경우(감소 · 음수 합계)가 있으면 아래 여백을 늘려 축 글씨와 겹치지 않게 함
+  const below = cols.some(c => c.kind === 'tot' ? c.b < 0 : c.b < c.a);
+  const extra = below ? 18 : 0, W = Math.max(280, bw0), H = height + extra, bottom = 36 + extra;
   const all = cols.flatMap(c => [c.a, c.b]); const maxV = Math.max(0, ...all), minV = Math.min(0, ...all), span = (maxV - minV) || 1;
   const y = (v: number) => top + (H - top - bottom) * (1 - (v - minV) / span);
   const slot = (W - pad * 2) / cols.length, bw = Math.min(54, slot * 0.56);
