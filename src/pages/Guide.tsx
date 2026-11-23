@@ -9,7 +9,7 @@ import { PageHead } from '../components/kit';
 
 const GROUPS: { key: string; title: string; path?: string; pre: string[]; priv?: boolean; admin?: boolean }[] = [
   { key: 'real', title: '경영 요약 · 손익 현황', path: '/bu-real', pre: ['bu-real.'], priv: true },
-  { key: 'bu', title: '본부 성과 · 본부 손익', path: '/bu-unit', pre: ['bu.'] },
+  { key: 'bu', title: '본부 성과', path: '/bu', pre: ['bu.'] },
   { key: 'ops', title: '운영 지표', path: '/ops', pre: ['ops.'], priv: true },
   { key: 'dept', title: '부서 손익', path: '/dept', pre: ['dept.'] },
   { key: 'cost', title: '비용 내역 · 전표', path: '/dept-cost', pre: ['cost.', 'voucher.'] },
@@ -93,6 +93,8 @@ const FAQ: { q: string; a: string[]; tag: string }[] = [
   ] },
   { tag: '보기', q: '다른 사람과 화면에 보이는 부서 · 금액이 다릅니다.', a: [
     '사원마다 볼 수 있는 화면과 부서가 정해져 있습니다. 부서가 제한된 사용자는 그 범위의 합계만 봅니다.',
+    '볼 수 있는 부서 = 속한 권한 그룹의 부서 + 개인에게 따로 준 부서. 관리자가 [사원 · 권한]에서 정하고, 바뀐 권한은 다시 들어올 때 적용됩니다.',
+    '[본부 성과]는 같은 화면입니다. 전체 권한 사용자는 회사 전체를, 나머지는 볼 수 있는 본부 · 부서만 봅니다.',
     '회사 전체 금액(경영 화면)은 전체 권한 사용자에게만 보입니다.',
   ] },
   { tag: '데이터', q: '어제 본 숫자와 오늘 숫자가 다릅니다.', a: [
@@ -236,7 +238,7 @@ export default function Guide() {
           <div className="item" key={g.key}>
             <button onClick={() => tog('g' + g.key)} aria-expanded={isOpen('g' + g.key)}><span>{g.title}</span><span className="help" style={{ fontWeight: 400 }}>{g.docs.length}개</span><span className="ar">{isOpen('g' + g.key) ? '▴' : '▾'}</span></button>
             {isOpen('g' + g.key) && <>
-              {g.path && <div style={{ padding: '0 16px 8px' }}><button className="btn sm ghost" onClick={() => nav(g.path!)}>이 화면 열기 →</button></div>}
+              {g.path && <div style={{ padding: '0 16px 8px' }}><button className="btn sm ghost" onClick={() => nav(g.key === 'bu' && !privileged ? '/bu-unit' : g.path!)}>이 화면 열기 →</button></div>}
               {g.docs.map(([id, d]) => (
                 <div className="sub" key={id}>
                   <button onClick={() => tog(id)} aria-expanded={isOpen(id)}><span>{d.title}</span><span style={{ marginLeft: 'auto', color: 'var(--fg-3)', fontSize: 12 }}>{isOpen(id) ? '▴' : '▾'}</span></button>

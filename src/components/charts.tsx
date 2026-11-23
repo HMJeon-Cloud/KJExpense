@@ -102,9 +102,9 @@ export function Donut({ slices, total, centerLabel, head = '항목' }: { slices:
       <div style={{ display: 'grid', gap: 5, minWidth: 0, flex: 1 }}>
         <div className="row lh" style={{ gap: 8 }}><i style={{ width: 10, flexShrink: 0 }} /><span style={{ flex: 1 }}>{head}</span><span>금액</span><span style={{ width: 42, textAlign: 'right' }}>비중</span></div>
         {arcs.map((a, i) => (
-          <div key={i} className="row" style={{ gap: 8, fontSize: 12.5 }}>
-            <i style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0 }} />
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{accL(a.s.a)}{a.s.kws?.length ? <span className="help"> · {a.s.kws.join(', ')}</span> : null}</span>
+          <div key={i} className="row" style={{ gap: 8, fontSize: 13, flexWrap: 'nowrap', alignItems: 'baseline' }}>
+            <i style={{ width: 10, height: 10, borderRadius: 2, background: a.color, flexShrink: 0, alignSelf: 'center' }} />
+            <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontWeight: 500 }}>{accL(a.s.a)}{a.s.kws?.length ? <span className="help"> · {a.s.kws.join(', ')}</span> : null}</span>
             <span className="num" style={{ fontSize: 12.5 }}>{fmt(a.s.v)}</span>
             <span className="help num" style={{ width: 42 }}>{total > 0 ? (a.s.v / total * 100).toFixed(1) + '%' : ''}</span>
           </div>

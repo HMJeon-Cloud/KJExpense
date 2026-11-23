@@ -59,6 +59,7 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
         .vt th{text-align:left;color:var(--fg-3);font-weight:600;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2);position:sticky;top:0;z-index:1}
         .vt td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
         .vt td.num,.vt th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .vt td.dt{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--fg-2)}
         .vt tr.grp td{background:color-mix(in srgb,var(--surface-2) 70%,var(--surface));font-weight:700;cursor:pointer;padding-block:8px}
         .vt tr.grp:hover td{background:var(--blue-soft)}
         .vt .desc{color:var(--fg-2);word-break:break-all}
@@ -81,7 +82,7 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
       {kwAll.length > 0 && <div className="kws"><span className="help">자주 나오는 말</span>{kwAll.map(k => <span key={k} className={'kw' + (kwSel === k ? ' on' : '')} style={{ padding: '3px 10px', marginLeft: 0 }} onClick={() => setKwSel(s => (s === k ? '' : k))}>{k}</span>)}</div>}
       <div className="tbl-wrap" style={{ maxHeight: compact ? 480 : undefined, overflowY: compact ? 'auto' : undefined }}>
         <table>
-          <thead><tr><th style={{ width: 92 }}>회계일</th>{!filter.depts || filter.depts.length !== 1 ? <th style={{ width: 120 }}>부서</th> : null}<th>적요</th><th style={{ width: 90 }}>구분</th><th className="num" style={{ width: 120 }}>금액</th></tr></thead>
+          <thead><tr><th style={{ width: 112 }}>회계일</th>{!filter.depts || filter.depts.length !== 1 ? <th style={{ width: 120 }}>부서</th> : null}<th>적요</th><th style={{ width: 90 }}>구분</th><th className="num" style={{ width: 120 }}>금액</th></tr></thead>
           <tbody>
             {groups.map(([a, list]) => {
               const open = openAcc[a] ?? (rows.length <= 60 || !!acc);
@@ -95,7 +96,7 @@ export default function VoucherTable({ filter, compact, onAccPick }: { filter: V
                   <td className={'num' + (sum < 0 ? ' neg' : '')}>{fmt(sum)}</td>
                 </tr>,
                 ...vis.map((v, i) => (
-                  <tr key={a + i}><td>{dL(v.date)}</td>{!filter.depts || filter.depts.length !== 1 ? <td>{v.dept}</td> : null}<td className="desc">{v.desc}</td><td className="help">{v.costType}</td><td className={'num' + (v.amt < 0 ? ' neg' : '')}>{fmt(v.amt)}</td></tr>
+                  <tr key={a + i}><td className="dt">{dL(v.date)}</td>{!filter.depts || filter.depts.length !== 1 ? <td>{v.dept}</td> : null}<td className="desc">{v.desc}</td><td className="help">{v.costType}</td><td className={'num' + (v.amt < 0 ? ' neg' : '')}>{fmt(v.amt)}</td></tr>
                 )),
               ];
             })}

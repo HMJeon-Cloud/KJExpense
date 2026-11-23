@@ -73,7 +73,10 @@ npm run dev            # http://localhost:5173/kjhub/
 | role  | 의미 |
 |-------|------|
 | admin | 모든 화면 + 설정·업로드·사원 관리 |
-| all   | 모든 조회 화면 (국전 수익/비용 포함), 설정 불가 |
-| user  | 화면별 허용 부서(`screen_depts`) 만 조회 |
+| all   | 모든 조회 화면 (경영 화면 포함), 설정 불가 |
+| user  | 화면별 허용 부서만 조회 — 실제 권한 = 권한 그룹 ∪ 개인 권한(`screen_depts`) |
+
+- 권한 그룹: `config` 의 `permGroups` 키에 `{ groups: [{ id, name, note, screen_depts, members:[사원 ID] }] }` 로 저장 (SQL 추가 없음, 변경 이력에서 되돌리기 가능). 로그인할 때 개인 권한과 합쳐 적용.
+- 권한은 화면에서 거르는 방식입니다. `rows` · `config` 는 로그인한 사용자 모두 읽을 수 있으므로(RLS), DB 수준 차단은 아닙니다.
 
 무료 플랜 한도: DB 500MB, 월 egress 5GB, 7일 미사용 시 일시정지(keep-alive 워크플로로 방지).

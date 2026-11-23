@@ -20,6 +20,10 @@ export type Employee = {
   emp_no: string | null; dept: string | null; title: string | null; grade: string | null;
   role: 'admin' | 'all' | 'user'; screen_depts: Record<string, string[]>; active: boolean;
   must_change_pw: boolean; created_at: string; updated_at: string;
+  /** 로그인한 본인 정보에만 붙음: screen_depts 는 그룹 권한까지 합친 실제 권한, own_screen_depts 는 개인 권한만 */
+  own_screen_depts?: Record<string, string[]>; perm_groups?: string[];
+  /** 본부 성과에서 볼 수 있는 부서 수 (본부 이름은 소속 부서 수로 셈) — 첫 화면을 정할 때 씀 */
+  bu_scope?: number;
 };
 
 export const DATASETS: Record<string, { label: string; monthField: string[]; snapshot?: boolean }> = {

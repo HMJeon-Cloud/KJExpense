@@ -1,7 +1,7 @@
-// 손익 현황(/bu-real) · 본부 성과(/bu) · 본부 손익(/bu-unit)
+// 손익 현황(/bu-real) · 본부 성과(/bu = 회사 전체, /bu-unit = 권한 범위만)
 //   손익 현황 = 회사 전체 손익(회계 기준) + 본부별 판매 이익·비용
 //   본부 성과 = 판매 이익을 배분 비율로 나눈 "배분 이익" 기준의 본부·부서 손익 (내부 평가용)
-//   본부 손익 = 본부장용 — 권한 범위의 부서만
+//   본부 성과는 한 화면입니다. 전체 권한은 /bu, 일반 권한(본부장 등)은 /bu-unit 으로 들어와 볼 수 있는 본부·부서만 봅니다.
 // 숫자는 계산 모듈(legacy/screens/profit.js)이 내보내는 모델(KJHub.models)을 그대로 씁니다.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -126,7 +126,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
   const W = model?.realized ? '판매 이익' : '배분 이익';
   const unit = model?.deptLevel ? '부서' : '본부';
   const desc = variant === '-real' ? '회사 전체 손익과 본부별 판매 이익·비용입니다. 판매 이익 = 매출 − 원가, 비용 = 판관비.'
-    : variant === '-my' ? '맡은 범위의 부서별 배분 이익과 비용입니다.'
+    : variant === '-my' ? '볼 수 있는 본부 · 부서의 배분 이익과 비용입니다. 배분 이익 = 단계 이익 × 배분 비율 + 해 준 지원.'
     : '판매 이익을 기여 단계와 배분 비율로 나눈 "배분 이익" 기준입니다. 본부·부서의 기여를 비교할 때 봅니다.';
   const head = (
     <PageHead title={title} desc={desc}>
@@ -157,11 +157,13 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
         .bud .bridge{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--fg-3);margin-top:8px}
         .bud .bridge b{display:block;font-size:16px;font-weight:800;color:var(--fg);font-variant-numeric:tabular-nums}
         .bud .bridge i{font-style:normal;font-weight:700;color:var(--fg-4);font-size:16px}
-        .bud .acc{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,150px);gap:10px;font-size:13px;padding:5px 6px;cursor:pointer;align-items:center;border-radius:6px}
+        .bud .acc{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;gap:2px 10px;font-size:13px;padding:6px 6px;cursor:pointer;align-items:baseline;border-radius:6px}
+        .bud .accg{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px 28px}
         .bud .acc:hover{background:var(--surface-2)}
-        .bud .acc>:first-child{color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .bud .acc>:last-child{display:flex;gap:4px;justify-content:flex-end;overflow:hidden}
-        @media(max-width:820px){.bud .acc{grid-template-columns:minmax(0,1fr) auto}.bud .acc>:last-child{display:none}}
+        .bud .acc>:first-child{color:var(--fg);font-weight:500;overflow-wrap:anywhere}
+        .bud .acc>.sh{text-align:right;font-size:12px;color:var(--fg-3)}
+        .bud .acc>.kw{grid-column:1 / -1;font-size:12px;color:var(--fg-3);line-height:1.5;overflow-wrap:anywhere}
+        @media(max-width:820px){.bud .acc{grid-template-columns:minmax(0,1fr) auto}.bud .acc>.sh{display:none}}
       `}</style>
       {head}
 
@@ -317,19 +319,7 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
       <Card title={`${mm}월 비용이 쓰인 곳`} help={hid('cost')} desc={!model.realized && Math.abs(supGap) >= 1 && donutTotal > 0 ? `전표 비용 기준 · 받은 지원 ${won(supGap)}은 포함하지 않음` : '누르면 전표를 봅니다'}>
         <div className="g2">
           <div>
-            {model.donut.length ? <Donut slices={model.donut} total={donutTotal} centerLabel={`${mm}월`} head={unit + ' · 큰 계정'} /> : <span className="help">기준월 비용 데이터가 없습니다.</span>}
-            <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-              {model.divDetail.map(u => (
-                <div key={u.unit}>
-                  <div className="kv" style={{ borderBottom: '1px solid var(--line)', marginBottom: 2 }}><b>{u.unit}</b><span className="num mut">{fmt(u.total)}</span></div>
-                  {u.tops.map(t => (
-                    <div key={t.acc} className="acc" onClick={() => drill(u.isDept ? { dept: u.unit, acc: t.acc } : { unit: u.unit, acc: t.acc })}>
-                      <span>{accL(t.acc)}</span><span className="num">{fmt(t.v)}</span><span>{t.kws.map(k => <span key={k} className="tag gr">{k}</span>)}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+            {model.donut.length ? <Donut slices={model.donut.map(s => ({ a: s.a, v: s.v }))} total={donutTotal} centerLabel={`${mm}월`} head={unit} /> : <span className="help">기준월 비용 데이터가 없습니다.</span>}
           </div>
           <div>
             <div className="subh">비용이 큰 부서 <span className="help" style={{ fontWeight: 400 }}>상위 10곳</span></div>
@@ -345,6 +335,22 @@ export default function BuDashboard({ variant, title }: { variant: '' | '-my' | 
             {!model.topDepts.length && <span className="help">표시할 데이터가 없습니다.</span>}
           </div>
         </div>
+        {model.divDetail.length > 0 && <>
+          <div className="subh" style={{ marginTop: 22 }}>{unit}별 큰 계정 3개 <span className="help" style={{ fontWeight: 400 }}>금액 큰 순 · 오른쪽 % = 그 {unit} 비용 중 비중 · 회색 글씨 = 그 계정 전표에 자주 나오는 적요</span></div>
+          <div className="accg">
+            {model.divDetail.map(u => (
+              <div key={u.unit}>
+                <div className="kv" style={{ borderBottom: '1px solid var(--line)', marginBottom: 2 }}><b>{u.unit}</b><span className="num mut">{fmt(u.total)}</span></div>
+                {u.tops.map(t => (
+                  <div key={t.acc} className="acc" onClick={() => drill(u.isDept ? { dept: u.unit, acc: t.acc } : { unit: u.unit, acc: t.acc })}>
+                    <span>{accL(t.acc)}</span><span className="num">{fmt(t.v)}</span><span className="sh">{u.total > 0 ? Math.round(t.v / u.total * 100) + '%' : ''}</span>
+                    {t.kws.length > 0 && <span className="kw">적요: {t.kws.join(' · ')}</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>}
       </Card>
     </div>
   );

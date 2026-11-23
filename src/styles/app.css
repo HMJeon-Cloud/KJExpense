@@ -173,7 +173,7 @@ button,input,select,textarea{font-family:inherit}
 .g21{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:18px;align-items:start}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .drawer{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}
-.drawer .side{position:sticky;top:calc(var(--top-h) + 14px);height:auto;border:0;background:transparent}
+.drawer>.dside{position:sticky;top:calc(var(--top-h) + 14px);max-height:calc(100vh - var(--top-h) - 28px);max-height:calc(100dvh - var(--top-h) - 28px);overflow-y:auto;scrollbar-width:thin}
 
 /* ── 숫자 타일 ── */
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
@@ -282,7 +282,7 @@ button,input,select,textarea{font-family:inherit}
 }
 @media (max-width:820px){
   .two,.drawer,.g2,.g3,.g21{grid-template-columns:minmax(0,1fr)}
-  .drawer .side{position:static}
+  .drawer>.dside{position:static;max-height:none;overflow:visible}
   .topbar .d-only,.closing .cl-l{display:none}
   .dstat{margin-right:0!important}
   .dstat .dstat-l{display:none}

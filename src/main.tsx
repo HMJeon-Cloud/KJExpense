@@ -11,7 +11,7 @@ import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import './styles/app.css';
 import { AuthProvider, useAuth } from './lib/auth';
 import { UIProvider } from './components/ui';
-import Layout, { homePath } from './components/Layout';
+import Layout, { homePath, canSee, screenOf } from './components/Layout';
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
 import Upload from './pages/Upload';
@@ -42,34 +42,40 @@ function Gate() {
   if (employee.must_change_pw) return <ChangePassword forced />;
   const isAdmin = employee.role === 'admin';
   const privileged = isAdmin || employee.role === 'all';
+  // 화면마다 볼 수 있는지 확인합니다 (메뉴에 안 나오는 화면은 주소를 직접 쳐도 열리지 않게).
+  const G = (path: string, el: React.ReactElement) => {
+    const scr = screenOf(path);
+    if (!scr || canSee(scr, employee)) return el;
+    return <Navigate to={path === '/bu-unit' && privileged ? '/bu' : homePath(employee)} replace />;
+  };
   return (
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Navigate to={homePath(employee)} replace />} />
-        <Route path="/home" element={privileged ? <Home /> : <Navigate to="/" />} />
-        <Route path="/settings/upload" element={isAdmin ? <Upload /> : <Navigate to="/" />} />
-        <Route path="/settings/employees" element={isAdmin ? <Employees /> : <Navigate to="/" />} />
-        <Route path="/settings/history" element={isAdmin ? <History /> : <Navigate to="/" />} />
-        <Route path="/settings/verify" element={isAdmin ? <Verify /> : <Navigate to="/" />} />
         <Route path="/password" element={<ChangePassword />} />
-        <Route path="/bu" element={<BuDashboard variant="" title="본부 성과" />} />
-        <Route path="/bu-real" element={<BuDashboard variant="-real" title="손익 현황" />} />
-        <Route path="/bu-unit" element={<BuDashboard variant="-my" title="본부 손익" />} />
-        <Route path="/dept" element={<DeptDashboard />} />
-        <Route path="/ops" element={<Ops />} />
-        <Route path="/dept-cost" element={<DeptCost />} />
-        <Route path="/trade" element={<Trade />} />
-        <Route path="/matinput" element={<MatInput />} />
-        <Route path="/stock" element={<LotStock />} />
-        <Route path="/dept-support" element={<DeptSupport />} />
-        <Route path="/settings/alloc" element={isAdmin ? <AllocGroups /> : <Navigate to="/" />} />
-        <Route path="/settings/items" element={isAdmin ? <AllocPrices kind="items" /> : <Navigate to="/" />} />
-        <Route path="/settings/materials" element={isAdmin ? <AllocPrices kind="mats" /> : <Navigate to="/" />} />
-        <Route path="/settings/support" element={<SupportSettings />} />
-        <Route path="/settings/fixed" element={isAdmin ? <FixedCostSettings /> : <Navigate to="/" />} />
-        <Route path="/settings/cost-alloc" element={isAdmin ? <CostAllocSettings /> : <Navigate to="/" />} />
+        <Route path="/home" element={G('/home', <Home />)} />
+        <Route path="/bu-real" element={G('/bu-real', <BuDashboard variant="-real" title="손익 현황" />)} />
+        <Route path="/bu" element={G('/bu', <BuDashboard variant="" title="본부 성과" />)} />
+        <Route path="/ops" element={G('/ops', <Ops />)} />
+        <Route path="/bu-unit" element={G('/bu-unit', <BuDashboard variant="-my" title="본부 성과" />)} />
+        <Route path="/dept" element={G('/dept', <DeptDashboard />)} />
+        <Route path="/dept-cost" element={G('/dept-cost', <DeptCost />)} />
+        <Route path="/dept-support" element={G('/dept-support', <DeptSupport />)} />
+        <Route path="/trade" element={G('/trade', <Trade />)} />
+        <Route path="/matinput" element={G('/matinput', <MatInput />)} />
+        <Route path="/stock" element={G('/stock', <LotStock />)} />
+        <Route path="/settings/upload" element={G('/settings/upload', <Upload />)} />
+        <Route path="/settings/pl" element={G('/settings/pl', <PlSettings />)} />
+        <Route path="/settings/verify" element={G('/settings/verify', <Verify />)} />
+        <Route path="/settings/alloc" element={G('/settings/alloc', <AllocGroups />)} />
+        <Route path="/settings/items" element={G('/settings/items', <AllocPrices kind="items" />)} />
+        <Route path="/settings/materials" element={G('/settings/materials', <AllocPrices kind="mats" />)} />
+        <Route path="/settings/support" element={G('/settings/support', <SupportSettings />)} />
+        <Route path="/settings/cost-alloc" element={G('/settings/cost-alloc', <CostAllocSettings />)} />
+        <Route path="/settings/fixed" element={G('/settings/fixed', <FixedCostSettings />)} />
+        <Route path="/settings/employees" element={G('/settings/employees', <Employees />)} />
+        <Route path="/settings/history" element={G('/settings/history', <History />)} />
         <Route path="/guide" element={<Guide />} />
-        <Route path="/settings/pl" element={isAdmin ? <PlSettings /> : <Navigate to="/" />} />
         <Route path="*" element={<LegacyOrPlaceholder isAdmin={isAdmin} />} />
       </Route>
     </Routes>

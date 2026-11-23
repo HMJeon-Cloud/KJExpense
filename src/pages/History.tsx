@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useUI, kst } from '../components/ui';
 
-const KEY_LABEL: Record<string, string> = { groups: '배분 비율', items: '품목 · 자재 판매가', support: '지원 내역 설정', closeMonth: '마감월', costAlloc: '본부 비용 배분', fixedCost: '고정비 기준', fxBase: '회사 기준 환율', plStmt: '손익계산서' };
+const KEY_LABEL: Record<string, string> = { groups: '배분 비율', items: '품목 · 자재 판매가', support: '지원 내역 설정', closeMonth: '마감월', costAlloc: '본부 비용 배분', fixedCost: '고정비 기준', fxBase: '회사 기준 환율', plStmt: '손익계산서', permGroups: '권한 그룹' };
 type H = { id: number; key: string; summary: string | null; changed_by: string | null; created_at: string };
 type L = { id: number; kind: string; actor: string | null; action: string | null; target: string | null; ok: boolean; created_at: string; detail: unknown };
 

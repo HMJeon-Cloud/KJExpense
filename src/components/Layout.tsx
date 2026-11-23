@@ -26,8 +26,9 @@ export const SCREENS: { group: string; fold?: boolean; items: Screen[] }[] = [
     { path: '/ops', title: '운영 지표', icon: I(Gauge), privileged: true },
   ]},
   { group: '부서', items: [
+    // 본부 성과는 한 화면입니다: 전체 권한은 /bu(회사 전체), 일반 권한은 /bu-unit(볼 수 있는 본부만) — 메뉴에는 둘 중 하나만 나옵니다.
+    { path: '/bu-unit', title: '본부 성과', icon: I(Building2), perm: true, userOnly: true },
     { path: '/dept', title: '부서 손익', icon: I(Users), perm: true },
-    { path: '/bu-unit', title: '본부 손익', icon: I(Network), perm: true, userOnly: true },
     { path: '/dept-cost', title: '비용 내역', icon: I(ReceiptText), perm: true },
     { path: '/dept-support', title: '지원 내역', icon: I(Handshake), perm: true },
   ]},
@@ -68,8 +69,15 @@ export function canSee(s: Screen, emp: Employee | null | undefined) {
   if (s.perm && !privileged) return ((emp.screen_depts || {})[s.path] || []).length > 0;
   return true;
 }
+/** 주소에 해당하는 화면 정보 */
+export const screenOf = (path: string) => ALL.find(s => s.path === path);
 /** 처음 들어갈 화면 */
-export const homePath = (emp: Employee | null | undefined) => (ALL.find(s => canSee(s, emp))?.path ?? '/guide');
+//   관리자 · 전체 보기 → 경영 요약 / 여러 부서를 보는 사람(본부장) → 본부 성과 / 한 부서만 보는 사람(팀장) → 부서 손익
+export const homePath = (emp: Employee | null | undefined) => {
+  const see = (p: string) => { const s = ALL.find(x => x.path === p); return !!s && canSee(s, emp); };
+  if (emp && emp.role === 'user' && see('/dept') && (!see('/bu-unit') || (emp.bu_scope ?? 2) <= 1)) return '/dept';
+  return ALL.find(s => canSee(s, emp))?.path ?? '/guide';
+};
 
 export default function Layout() {
   const { employee, closeMonth, logout, setCloseMonth } = useAuth();
@@ -80,7 +88,7 @@ export default function Layout() {
   const [fold, setFold] = useState<Record<string, boolean>>({});
   useEffect(() => { setDrawer(false); }, [loc.pathname]); // 화면을 고르면 메뉴 닫기
   useEffect(() => { document.body.style.overflow = drawer ? 'hidden' : ''; return () => { document.body.style.overflow = ''; }; }, [drawer]);
-  const groups = useMemo(() => SCREENS.map(g => ({ ...g, items: g.items.filter(i => canSee(i, employee)) })).filter(g => g.items.length), [employee]);
+  const groups = useMemo(() => { const home = homePath(employee); return SCREENS.map(g => { const items = g.items.filter(i => canSee(i, employee)); const hi = items.findIndex(i => i.path === home); return { ...g, items: hi > 0 ? [items[hi], ...items.filter((_, k) => k !== hi)] : items }; }).filter(g => g.items.length); }, [employee]);
   const current = ALL.find(i => loc.pathname === i.path || loc.pathname.startsWith(i.path + '/'));
   const curGroup = SCREENS.find(g => g.items.some(i => i === current))?.group;
   const saveClose = async (val: string) => {

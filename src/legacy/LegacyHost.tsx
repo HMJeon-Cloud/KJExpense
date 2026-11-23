@@ -72,7 +72,7 @@ export default function LegacyHost() {
     setNavHook(id => { const p = SCREEN_PATH[id]; if (p && p !== location.hash.slice(1)) nav(p); });
   }, [nav]);
 
-  useEffect(() => { if (employee) { setUser(employee); loadCloseMonth(); } }, [employee?.login_id]); // eslint-disable-line
+  useEffect(() => { if (employee) { setUser(employee); loadCloseMonth(); } }, [employee?.login_id, JSON.stringify(employee?.screen_depts || {})]); // eslint-disable-line
 
   useEffect(() => {
     if (screen) { KJHub.showScreen(screen, { fromRouter: true }); if (employee) loadForScreen(screen); }
