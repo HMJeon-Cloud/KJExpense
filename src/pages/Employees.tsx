@@ -2,7 +2,7 @@
 //   실제 권한 = 개인 권한 ∪ 속한 권한 그룹 (lib/permGroups.ts). 역할(관리자 · 전체 보기 · 일반)은 사원마다 정합니다.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { supabase, type Employee } from '../lib/supabase';
+import { supabase, initialPassword, idFromEmail, type Employee } from '../lib/supabase';
 import { useUI, kst } from '../components/ui';
 import { SCREENS } from '../components/Layout';
 import { loadPermGroups, savePermGroups, groupsOf, mergeScreenDepts, newGroupId, type PermGroup, type ScreenDepts } from '../lib/permGroups';
@@ -17,6 +17,8 @@ const HQ_ORDER = ['API사업본부', 'API합성본부', '소재사업본부', '�
 const nrm = (s: unknown) => String(s ?? '').replace(/\s+/g, '').toLowerCase();
 const lc = (s: unknown) => String(s ?? '').trim().toLowerCase();
 const sig = (l: string[] | undefined) => (l || []).map(nrm).sort().join('|');
+const ID_RE = /^[A-Za-z0-9._-]+$/;   // 사원 ID 에 쓸 수 있는 글자 (SQL admin_upsert_employee 와 같음)
+const lcNo = (s: unknown) => String(s ?? '').trim().toLowerCase();
 
 async function callAdmin(body: { action: string; employee?: Form; login_id?: string }) {
   if (body.action === 'create' || body.action === 'update') {
@@ -133,9 +135,9 @@ export default function Employees() {
   function reset() { setForm(empty); setFormGroups([]); setIsNew(true); }
   const set = (k: keyof Form, v: unknown) => setForm(f => ({ ...f, [k]: v }));
   /** 사원 한 명의 그룹 소속을 바꾼 새 그룹 목록 (바뀐 게 없으면 null) */
-  function withMembership(loginId: string, ids: string[] | null) {
-    let changed = false;
-    const next = groups.map(g => {
+  function withMembership(loginId: string, ids: string[] | null, base: PermGroup[] = groups) {
+    let changed = base !== groups;
+    const next = base.map(g => {
       const inG = g.members.some(m => lc(m) === lc(loginId)); const want = !!ids && ids.includes(g.id);
       if (inG === want) return g;
       changed = true;
@@ -144,18 +146,25 @@ export default function Employees() {
     return changed ? next : null;
   }
   async function save() {
-    if (!form.login_id.trim() || !form.name.trim()) return toast('사원 ID와 이름을 넣어 주세요.', 'err');
+    const id = form.login_id.trim(), no = String(form.emp_no ?? '').trim();
+    if (!form.name.trim() || !id) return toast('이름과 사원 ID를 넣어 주세요.', 'err');
+    if (!ID_RE.test(id)) return toast('사원 ID는 영문 · 숫자 · . _ - 만 쓸 수 있습니다. 회사 메일 앞부분을 넣어 주세요.', 'err');
+    if (isNew && !no) return toast('사번을 넣어 주세요. 사번은 사원을 구분하는 키이고, 첫 비밀번호(k + 사번)로도 씁니다.', 'err');
+    const prev = isNew ? undefined : list.find(e => e.id === form.id);
+    const renamed = !!prev && lc(prev.login_id) !== lc(id);
+    if (renamed && !(await confirm('사원 ID를 바꿀까요?', `${prev!.login_id} → ${id}. ${prev!.auth_uid ? '이제 새 ID로 로그인합니다. 비밀번호는 그대로입니다.' : ''} 권한 그룹 소속도 새 ID로 옮깁니다.`, { okText: '바꾸기' }))) return;
     setBusy(true);
     try {
-      await callAdmin({ action: isNew ? 'create' : 'update', employee: form });
-      const next = withMembership(form.login_id, formGroups);
-      if (next) { await savePermGroups(next, `${form.name}(${form.login_id}) 권한 그룹 변경`); setGroups(next); }
-      toast(isNew ? `${form.name} 님을 등록했습니다. 사원 ID(${form.login_id})로 처음 로그인하면 계정이 만들어집니다.` : `${form.name} 님 정보를 저장했습니다. 바뀐 권한은 그 사원이 다시 들어올 때 적용됩니다.`);
+      await callAdmin({ action: isNew ? 'create' : 'update', employee: { ...form, login_id: id, emp_no: no } });
+      const base = renamed ? groups.map(g => ({ ...g, members: g.members.map(m => (lc(m) === lc(prev!.login_id) ? id : m)) })) : groups;
+      const next = withMembership(id, formGroups, base);
+      if (next) { await savePermGroups(next, `${form.name}(${id}) 권한 그룹 변경${renamed ? ` · ID ${prev!.login_id} → ${id}` : ''}`); setGroups(next); }
+      toast(isNew ? `${form.name} 님을 등록했습니다. 사원 ID ${id}, 첫 비밀번호 ${initialPassword(id, no)}로 처음 로그인하면 계정이 만들어집니다.` : `${form.name} 님 정보를 저장했습니다. 바뀐 권한은 그 사원이 다시 들어올 때 적용됩니다.`);
       await load(); if (isNew) reset();
     } catch (e) { toast((e as Error).message, 'err'); } finally { setBusy(false); }
   }
   async function resetPw() {
-    if (!(await confirm('비밀번호를 처음 상태로 돌릴까요?', `${form.name} 님의 비밀번호가 사원 ID(${form.login_id})로 돌아가고, 다음 로그인 때 새 비밀번호를 정하게 됩니다.`, { okText: '돌리기' }))) return;
+    if (!(await confirm('비밀번호를 처음 상태로 돌릴까요?', `${form.name} 님의 비밀번호가 첫 비밀번호(${initialPassword(form.login_id, form.emp_no)} = k + 사번)로 돌아가고, 다음 로그인 때 새 비밀번호를 정하게 됩니다.`, { okText: '돌리기' }))) return;
     try { await callAdmin({ action: 'reset_password', login_id: form.login_id }); toast('비밀번호를 처음 상태로 돌렸습니다.'); } catch (e) { toast((e as Error).message, 'err'); }
   }
   async function remove() {
@@ -167,25 +176,72 @@ export default function Employees() {
       toast('지웠습니다.'); reset(); await load();
     } catch (e) { toast((e as Error).message, 'err'); }
   }
-  /** 엑셀 일괄 등록: 열 이름 이름 / 이메일 / 사번 / ID / 부서 / 직책 / 직위 (영문 name/email/emp_no/login_id/dept/title/grade 도 인식) */
+  /** 엑셀 일괄 등록 — 열: 이름 · 사번 · 이메일 · 사원 ID · 부서 · 직책 · 직위 (사원 ID 가 비어 있으면 이메일 앞부분)
+   *  사번이 키: 같은 사번이 이미 있으면 그 사원의 정보만 고치고(역할 · 권한은 그대로), 없으면 새로 등록합니다. */
   async function importExcel(f: File) {
     const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
-    const col = (r: Record<string, unknown>, ...names: string[]) => { for (const k of Object.keys(r)) if (names.some(n => n.toLowerCase() === String(k).trim().toLowerCase())) return String(r[k] ?? '').trim(); return ''; };
-    const items = rows.map(r => ({ login_id: col(r, 'ID', '아이디', 'login_id', '사원ID'), name: col(r, '이름', '성명', 'name'), email: col(r, '이메일', 'email'), emp_no: col(r, '사번', 'emp_no'), dept: col(r, '부서', '부서명', 'dept'), title: col(r, '직책', 'title'), grade: col(r, '직위', 'grade'), role: 'user', screen_depts: {}, active: true }))
-      .filter(x => x.login_id && x.name);
-    if (!items.length) return toast('이름과 ID 열이 있는 줄을 찾지 못했습니다.', 'err');
-    const dup = items.filter(x => list.some(e => e.login_id.toLowerCase() === x.login_id.toLowerCase()));
-    if (!(await confirm('엑셀로 한꺼번에 등록할까요?', `${items.length}명을 등록합니다.${dup.length ? ` 이미 있는 ${dup.length}명은 이름 · 부서 같은 정보만 새로 바뀌고 권한은 그대로 둡니다.` : ''}`, { okText: '등록' }))) return;
-    setBusy(true); let ok = 0;
+    const sh = wb.Sheets[wb.SheetNames.find(n => /사원|등록/.test(n)) ?? wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sh, { defval: '', raw: false });
+    const key = (k: string) => String(k).replace(/[\s*()（）]/g, '').replace(/필수|선택/g, '').toLowerCase();
+    const col = (r: Record<string, unknown>, ...names: string[]) => { const want = names.map(key); for (const k of Object.keys(r)) if (want.includes(key(k))) return String(r[k] ?? '').trim(); return ''; };
+    const bad: string[] = []; const seenNo = new Set<string>(); const seenId = new Set<string>();
+    const items = rows.map((r, i) => {
+      const email = col(r, '이메일', '메일', 'email');
+      const it = { login_id: (col(r, '사원ID', 'ID', '아이디', 'login_id') || idFromEmail(email)).toLowerCase(), name: col(r, '이름', '성명', 'name'), email, emp_no: col(r, '사번', 'emp_no').replace(/\.0$/, ''), dept: col(r, '부서', '부서명', 'dept'), title: col(r, '직책', 'title'), grade: col(r, '직위', 'grade') };
+      const line = `${i + 2}행`;
+      if (!it.name && !it.emp_no && !email) return null;                       // 빈 줄
+      if (!it.name || !it.emp_no || !it.login_id) { bad.push(`${line}: 이름 · 사번 · 이메일(또는 사원 ID)이 필요합니다`); return null; }
+      if (!ID_RE.test(it.login_id)) { bad.push(`${line}: 사원 ID "${it.login_id}"에 쓸 수 없는 글자가 있습니다`); return null; }
+      if (seenNo.has(lcNo(it.emp_no))) { bad.push(`${line}: 사번 ${it.emp_no}이(가) 파일 안에 두 번 있습니다`); return null; }
+      if (seenId.has(lc(it.login_id))) { bad.push(`${line}: 사원 ID ${it.login_id}이(가) 파일 안에 두 번 있습니다`); return null; }
+      seenNo.add(lcNo(it.emp_no)); seenId.add(lc(it.login_id));
+      return it;
+    }).filter(Boolean) as { login_id: string; name: string; email: string; emp_no: string; dept: string; title: string; grade: string }[];
+    if (!items.length) return toast(bad.length ? `등록할 줄이 없습니다. ${bad.slice(0, 3).join(' / ')}` : '이름 · 사번 · 이메일 열이 있는 줄을 찾지 못했습니다. [예시 엑셀]의 양식을 써 주세요.', 'err');
+    // 사번으로 기존 사원 찾기 (사번이 없는 기존 사원은 사원 ID 로)
+    const match = (it: typeof items[number]) => list.find(e => e.emp_no && lcNo(e.emp_no) === lcNo(it.emp_no)) ?? list.find(e => !e.emp_no && lc(e.login_id) === lc(it.login_id));
+    const upd = items.filter(match), add = items.length - upd.length;
+    const ren = upd.filter(it => lc(match(it)!.login_id) !== lc(it.login_id));
+    const msg = [`새로 등록 ${add}명`, upd.length ? `정보 고침 ${upd.length}명 (역할 · 권한은 그대로)` : '', ren.length ? `사원 ID 바뀜 ${ren.length}명: ${ren.slice(0, 5).map(it => `${match(it)!.login_id} → ${it.login_id}`).join(', ')}${ren.length > 5 ? ' …' : ''}` : '', bad.length ? `건너뜀 ${bad.length}줄: ${bad.slice(0, 3).join(' / ')}${bad.length > 3 ? ' …' : ''}` : ''].filter(Boolean).join('\n');
+    if (!(await confirm('엑셀로 한꺼번에 등록할까요?', msg, { okText: '등록' }))) { if (fileRef.current) fileRef.current.value = ''; return; }
+    setBusy(true); let ok = 0; const fail: string[] = []; let gs = groups;
     try {
       for (const it of items) {
-        const prev = list.find(e => e.login_id.toLowerCase() === it.login_id.toLowerCase());
-        const { error } = await supabase.rpc('admin_upsert_employee', { p: prev ? { ...it, role: prev.role, screen_depts: prev.screen_depts, active: prev.active } : it });
-        if (error) { toast(`${it.name}(${it.login_id}) 실패: ${error.message}`, 'err'); } else ok++;
+        const prev = match(it);
+        const { error } = await supabase.rpc('admin_upsert_employee', { p: prev ? { ...it, id: prev.id } : { ...it, role: 'user', screen_depts: {}, active: true } });
+        if (error) { fail.push(`${it.name}(${it.emp_no}): ${error.message}`); continue; }
+        ok++;
+        if (prev && lc(prev.login_id) !== lc(it.login_id)) gs = gs.map(g => ({ ...g, members: g.members.map(m => (lc(m) === lc(prev.login_id) ? it.login_id : m)) }));
       }
-      toast(`${ok}명을 등록했습니다.`); await load();
+      if (gs !== groups) { await savePermGroups(gs, `엑셀 등록 — 사원 ID 바뀜 반영`); setGroups(gs); }
+      if (fail.length) toast(`${ok}명 처리, ${fail.length}명 실패 — ${fail.slice(0, 2).join(' / ')}`, 'err'); else toast(`${ok}명을 처리했습니다.`);
+      await load();
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+  }
+  /** 예시 엑셀 내려받기: [사원 등록] 시트(이 양식 그대로 채워 올림) + [작성 방법] 시트 */
+  function downloadTemplate() {
+    const head = ['이름', '사번', '이메일', '사원 ID', '부서', '직책', '직위'];
+    const ex = [['홍길동', '23001', 'gdhong@kukjeon.co.kr', '', '영업팀', '팀장', '부장'], ['김예시', '24015', 'yskim@kukjeon.co.kr', '', '글로벌구매팀', '팀원', '대리']];
+    const ws = XLSX.utils.aoa_to_sheet([head, ...ex]);
+    ws['!cols'] = [10, 10, 26, 14, 16, 10, 10].map(w => ({ wch: w }));
+    // 사번은 글자로 (앞자리 0 이 사라지지 않게)
+    for (let r = 1; r <= ex.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: 1 })]; if (c) { c.t = 's'; c.z = '@'; } }
+    const how = XLSX.utils.aoa_to_sheet([
+      ['열', '꼭 넣기', '설명'],
+      ['이름', 'O', '사원 이름'],
+      ['사번', 'O', '사원을 구분하는 키입니다. 같은 사번이 이미 있으면 새로 만들지 않고 그 사원의 정보를 고칩니다. 첫 비밀번호 = k + 사번 (예: 23016 → k23016)'],
+      ['이메일', 'O', '회사 메일 주소. 사원 ID 를 비워 두면 메일 앞부분이 사원 ID 가 됩니다 (gdhong@kukjeon.co.kr → gdhong)'],
+      ['사원 ID', '', '보통 비워 둡니다. 메일 앞부분과 다르게 하고 싶을 때만 넣습니다 (영문 · 숫자 · . _ - 만)'],
+      ['부서', '', '[부서 손익] 등에 나오는 부서 이름과 같게 써 주세요'],
+      ['직책 · 직위', '', '참고용'],
+      [],
+      ['참고', '', '역할(관리자 · 전체 보기 · 일반)과 볼 수 있는 부서는 등록한 뒤 [사원 · 권한] 화면에서 정합니다. 엑셀로 다시 올려도 이미 정한 역할 · 권한은 바뀌지 않습니다.'],
+      ['참고', '', '예시 두 줄(홍길동 · 김예시)은 지우고 실제 사원을 넣어 주세요. 첫 줄(열 이름)은 바꾸지 마세요.'],
+    ]);
+    how['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 100 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '사원 등록'); XLSX.utils.book_append_sheet(wb, how, '작성 방법');
+    const blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '사원등록_예시.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
   // ── 권한 그룹 ──
@@ -259,7 +315,7 @@ export default function Employees() {
       <div className="page-head">
         <div><h1>사원 · 권한</h1><div className="help">사원을 등록하고, 누가 어떤 화면에서 어느 부서를 볼지 정합니다. 실제 권한 = 권한 그룹 + 개인 권한.</div></div>
         <span className="sp" />
-        {tab === 'emp' ? <><button className="btn" onClick={() => fileRef.current?.click()} disabled={busy}>엑셀로 한꺼번에 등록</button><input ref={fileRef} id="emp-file" type="file" accept=".xlsx,.xls,.csv" hidden onChange={e => { const f = e.target.files?.[0]; if (f) importExcel(f); }} /><button className="btn pri" onClick={() => { reset(); toEditor(); }}>+ 사원 추가</button></>
+        {tab === 'emp' ? <><button className="btn ghost" onClick={downloadTemplate}>예시 엑셀</button><button className="btn" onClick={() => fileRef.current?.click()} disabled={busy}>엑셀로 한꺼번에 등록</button><input ref={fileRef} id="emp-file" type="file" accept=".xlsx,.xls,.csv" hidden onChange={e => { const f = e.target.files?.[0]; if (f) importExcel(f); }} /><button className="btn pri" onClick={() => { reset(); toEditor(); }}>+ 사원 추가</button></>
           : <button className="btn pri" onClick={() => { resetGroup(); toEditor(); }}>+ 그룹 추가</button>}
       </div>
       <div className="filters">
@@ -270,21 +326,22 @@ export default function Employees() {
 
       {tab === 'emp' && (
         <div className="drawer">
-          <div className="card"><div className="tbl-wrap"><table className="tbl"><thead><tr><th>이름</th><th>사원 ID</th><th>부서</th><th>직책</th><th>역할</th><th>권한 그룹</th><th>상태</th></tr></thead>
+          <div className="card"><div className="tbl-wrap"><table className="tbl"><thead><tr><th>이름</th><th>사원 ID</th><th>사번</th><th>부서</th><th>직책</th><th>역할</th><th>권한 그룹</th><th>상태</th></tr></thead>
             <tbody>{filtered.map(e => { const gs = groupsOf(groups, e.login_id); return <tr key={e.id} className={form.id === e.id ? 'sel' : ''} onClick={() => pick(e)} style={{ cursor: 'pointer' }}>
-              <td><b>{e.name}</b></td><td>{e.login_id}</td><td>{e.dept}</td><td>{e.title}</td>
+              <td><b>{e.name}</b></td><td>{e.login_id}</td><td className="num" style={{ textAlign: 'left' }}>{e.emp_no || <span className="tag y">없음</span>}</td><td>{e.dept}</td><td>{e.title}</td>
               <td><span className={'tag ' + (e.role === 'admin' ? 'o' : e.role === 'all' ? 'b' : 'gr')}>{ROLE_LABEL[e.role]}</span></td>
               <td>{e.role !== 'user' ? <span className="mut">-</span> : gs.length ? <span className="row" style={{ gap: 4 }}>{gs.map(g => <span key={g.id} className="tag b">{g.name}</span>)}</span> : Object.values(e.screen_depts || {}).some(l => (l || []).length) ? <span className="help">개인 권한만</span> : <span className="tag y">권한 없음</span>}</td>
               <td>{!e.active ? <span className="tag n">사용 중지</span> : !e.auth_uid ? <span className="tag gr">아직 로그인 안 함</span> : e.must_change_pw ? <span className="tag y">첫 비밀번호</span> : <span className="tag g">사용 중</span>}</td></tr>; })}
-              {filtered.length === 0 && <tr><td colSpan={7} className="empty">사원이 없습니다. 오른쪽에서 추가해 주세요.</td></tr>}</tbody></table></div></div>
+              {filtered.length === 0 && <tr><td colSpan={8} className="empty">사원이 없습니다. 오른쪽에서 추가해 주세요.</td></tr>}</tbody></table></div></div>
 
           <div className="card dside"><div className="hd">{isNew ? '사원 추가' : '사원 정보'}<span className="sp" />{!isNew && <span className="help">등록 {form.created_at ? kst(form.created_at).slice(0, 12) : ''}</span>}</div>
             <div className="bd">
               <div className="two" style={{ gap: 10 }}>
                 <div className="field"><label htmlFor="e-name">이름 *</label><input id="e-name" className="inp" value={form.name} onChange={e => set('name', e.target.value)} /></div>
-                <div className="field"><label htmlFor="e-id">사원 ID * {isNew && <span className="help">(첫 비밀번호로도 씀)</span>}</label><input id="e-id" className="inp" value={form.login_id} disabled={!isNew} onChange={e => set('login_id', e.target.value.trim())} /></div>
-                <div className="field"><label htmlFor="e-no">사번</label><input id="e-no" className="inp" value={form.emp_no ?? ''} onChange={e => set('emp_no', e.target.value)} /></div>
-                <div className="field"><label htmlFor="e-mail">이메일</label><input id="e-mail" className="inp" value={form.email ?? ''} onChange={e => set('email', e.target.value)} /></div>
+                <div className="field"><label htmlFor="e-no">사번 * <span className="help">사원을 구분하는 키</span></label><input id="e-no" className="inp" value={form.emp_no ?? ''} onChange={e => set('emp_no', e.target.value.trim())} /></div>
+                <div className="field"><label htmlFor="e-mail">이메일</label><input id="e-mail" className="inp" type="email" value={form.email ?? ''} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, email: v, login_id: !f.login_id || f.login_id === idFromEmail(f.email) ? idFromEmail(v) : f.login_id })); }} /></div>
+                <div className="field"><label htmlFor="e-id">사원 ID * <span className="help">메일 앞부분 · 로그인할 때 씀</span></label><input id="e-id" className="inp" value={form.login_id} onChange={e => set('login_id', e.target.value.trim())} /></div>
+                <div className="field"><label>첫 비밀번호</label><div className="inp" style={{ background: 'var(--surface-2)', color: 'var(--fg-2)' }}>{form.emp_no ? initialPassword(form.login_id, form.emp_no) + ' (k + 사번)' : '사번을 넣으면 k + 사번'}</div></div>
                 <div className="field"><label htmlFor="e-dept">부서</label><input id="e-dept" className="inp" list="dept-list" value={form.dept ?? ''} onChange={e => set('dept', e.target.value)} /><datalist id="dept-list">{depts.map(d => <option key={d} value={d} />)}</datalist></div>
                 <div className="field"><label htmlFor="e-title">직책</label><input id="e-title" className="inp" value={form.title ?? ''} onChange={e => set('title', e.target.value)} /></div>
                 <div className="field"><label htmlFor="e-grade">직위</label><input id="e-grade" className="inp" value={form.grade ?? ''} onChange={e => set('grade', e.target.value)} /></div>

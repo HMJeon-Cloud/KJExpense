@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../lib/auth';
 import { useUI } from '../components/ui';
+import { initialPassword } from '../lib/supabase';
 
 export default function ChangePassword({ forced }: { forced?: boolean }) {
   const { changePassword, employee, logout } = useAuth();
@@ -14,6 +15,7 @@ export default function ChangePassword({ forced }: { forced?: boolean }) {
     if (!valid) return setErr('8자 이상으로, 영문과 숫자를 모두 넣어 주세요.');
     if (a !== b) return setErr('두 칸의 비밀번호가 서로 다릅니다.');
     if (employee && a.toLowerCase() === employee.login_id.toLowerCase()) return setErr('사원 ID와 같은 비밀번호는 쓸 수 없습니다.');
+    if (employee && a.toLowerCase() === initialPassword(employee.login_id, employee.emp_no).toLowerCase()) return setErr('첫 비밀번호(k + 사번)와 다른 비밀번호를 정해 주세요.');
     setBusy(true);
     try { await changePassword(a); toast('비밀번호를 바꿨습니다.'); setA(''); setB(''); } catch (ex) { setErr((ex as Error).message); } finally { setBusy(false); }
   }
@@ -23,7 +25,7 @@ export default function ChangePassword({ forced }: { forced?: boolean }) {
         <img src={import.meta.env.BASE_URL + 'logo.png'} alt="" />
         <i className="blob" aria-hidden="true" />
         <h1>{forced ? '처음 오셨네요' : '비밀번호 바꾸기'}</h1>
-        <p>{forced ? '처음 비밀번호(사원 ID)를 새 비밀번호로 바꾸면 바로 쓸 수 있습니다.' : '새 비밀번호를 넣어 주세요.'}</p>
+        <p>{forced ? '첫 비밀번호(k + 사번)를 새 비밀번호로 바꾸면 바로 쓸 수 있습니다.' : '새 비밀번호를 넣어 주세요.'}</p>
       </div>
       <form className="form" onSubmit={submit}>
         <h2>{employee?.name} <span className="tag y">{forced ? '새 비밀번호를 정해 주세요' : '비밀번호 바꾸기'}</span></h2>

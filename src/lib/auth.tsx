@@ -63,8 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: needsSignup } = await supabase.rpc('login_needs_signup', { p_login_id: id });
       let session: Session | null = null;
       if (needsSignup) {
-        // 첫 로그인: 초기 비밀번호(= 사원 ID) 확인 후 계정을 만들고 바로 로그인
-        if (password !== id) { await logAccess(id, 'login', false, { msg: 'initial password mismatch' }); throw new Error('첫 로그인입니다. 초기 비밀번호는 사원 ID와 같습니다.'); }
+        // 첫 로그인: 첫 비밀번호(= k + 사번)를 서버에서 확인한 뒤 계정을 만들고 바로 로그인
+        const { data: ok } = await supabase.rpc('check_initial_password', { p_login_id: id, p_password: password });
+        if (!ok) { await logAccess(id, 'login', false, { msg: 'initial password mismatch' }); throw new Error('첫 로그인입니다. 첫 비밀번호는 k + 사번입니다. (예: 사번 23016 → k23016)'); }
         const { data, error } = await supabase.auth.signUp({ email: pseudoEmail(id), password, options: { data: { login_id: id } } });
         if (error) throw new Error('계정 생성 실패: ' + error.message);
         session = data.session;
@@ -74,7 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) { await logAccess(id, 'login', false, { msg: error.message }); throw new Error('사원 ID 또는 비밀번호가 올바르지 않습니다.'); }
         session = data.session;
       }
-      if (needsSignup) await supabase.rpc('link_my_account', { p_login_id: id });
+      if (needsSignup) {
+        const { data: linked, error } = await supabase.rpc('link_my_account', { p_login_id: id, p_password: password });
+        if (error || !linked) { await supabase.auth.signOut(); throw new Error('계정을 연결하지 못했습니다. 관리자에게 문의해 주세요.'); }
+      }
       await loadEmployee(session);
       await logAccess(id, 'login', true);
     },

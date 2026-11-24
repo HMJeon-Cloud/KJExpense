@@ -33,7 +33,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
         <div className="backdrop" onClick={() => { dlg.resolve(false); setDlg(null); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h4>{dlg.title}</h4>
-            <p>{dlg.body}</p>
+            <p style={{ whiteSpace: "pre-line" }}>{dlg.body}</p>
             <div className="row">
               <button className="btn ghost" onClick={() => { dlg.resolve(false); setDlg(null); }}>취소</button>
               <button className={'btn ' + (dlg.danger ? 'danger' : 'pri')} autoFocus onClick={() => { dlg.resolve(true); setDlg(null); }}>{dlg.okText ?? (dlg.danger ? '삭제' : '확인')}</button>

@@ -14,6 +14,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
 
 /** 사원 ID → 로그인용 가짜 이메일 */
 export const pseudoEmail = (loginId: string) => `${loginId.trim().toLowerCase()}@${LOGIN_EMAIL_DOMAIN}`;
+/** 첫 비밀번호 = k + 사번 (사번이 k 로 시작하면 그대로, 사번이 없으면 사원 ID) — SQL initial_password() 와 같은 규칙 */
+export const initialPassword = (loginId: string, empNo?: string | null) => { const n = String(empNo ?? '').trim(); return n ? 'k' + n.replace(/^k/i, '') : loginId.trim(); };
+/** 사원 ID = 회사 메일 앞부분 (hmjeon@kukjeon.co.kr → hmjeon) */
+export const idFromEmail = (email?: string | null) => String(email ?? '').trim().split('@')[0].trim().toLowerCase();
 
 export type Employee = {
   id: number; login_id: string; auth_uid: string | null; name: string; email: string | null;

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../lib/auth';
-import { supabase } from '../lib/supabase';
+import { supabase, initialPassword, idFromEmail } from '../lib/supabase';
 import { ymLabel } from '../components/ui';
 
 export default function Login() {
@@ -10,7 +10,7 @@ export default function Login() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [bootstrap, setBootstrap] = useState(false);
-  const [bs, setBs] = useState({ login_id: '', name: '', email: '', dept: '' });
+  const [bs, setBs] = useState({ login_id: '', name: '', email: '', dept: '', emp_no: '' });
 
   useEffect(() => { supabase.rpc('needs_bootstrap').then(({ data }) => setBootstrap(data === true)); }, []);
 
@@ -21,9 +21,9 @@ export default function Login() {
   async function setup(e: FormEvent) {
     e.preventDefault(); setErr(''); setBusy(true);
     try {
-      const { error } = await supabase.rpc('bootstrap_admin', { p_login_id: bs.login_id.trim(), p_name: bs.name.trim(), p_email: bs.email.trim(), p_dept: bs.dept.trim() || null });
+      const { error } = await supabase.rpc('bootstrap_admin', { p_login_id: bs.login_id.trim(), p_name: bs.name.trim(), p_email: bs.email.trim(), p_dept: bs.dept.trim() || null, p_emp_no: bs.emp_no.trim() || null });
       if (error) throw new Error(error.message.includes('이메일') ? '처음 관리자로 정해 둔 이메일이 아닙니다.' : error.message);
-      await login(bs.login_id.trim(), bs.login_id.trim());
+      await login(bs.login_id.trim(), initialPassword(bs.login_id, bs.emp_no));
     } catch (ex) { setErr((ex as Error).message); } finally { setBusy(false); }
   }
   const setB = (k: keyof typeof bs, v: string) => setBs(s => ({ ...s, [k]: v }));
@@ -47,18 +47,19 @@ export default function Login() {
           <h2>처음 설정 <span className="tag o">관리자 등록</span></h2>
           <span className="help">아직 등록된 사원이 없습니다. 관리자 본인 정보를 넣으면 계정이 만들어지고 바로 로그인됩니다. 다른 사원은 [사원 · 권한]에서 등록합니다.</span>
           <div className="field"><label htmlFor="bs-name">이름</label><input id="bs-name" className="inp" value={bs.name} onChange={e => setB('name', e.target.value)} autoFocus /></div>
-          <div className="field"><label htmlFor="bs-id">사원 ID (로그인할 때 쓰고, 첫 비밀번호도 같습니다)</label><input id="bs-id" className="inp" value={bs.login_id} onChange={e => setB('login_id', e.target.value)} /></div>
-          <div className="field"><label htmlFor="bs-email">이메일 (처음 관리자로 정해 둔 주소)</label><input id="bs-email" className="inp" type="email" value={bs.email} onChange={e => setB('email', e.target.value)} /></div>
+          <div className="field"><label htmlFor="bs-email">이메일 (처음 관리자로 정해 둔 주소)</label><input id="bs-email" className="inp" type="email" value={bs.email} onChange={e => { const v = e.target.value; setBs(s => ({ ...s, email: v, login_id: !s.login_id || s.login_id === idFromEmail(s.email) ? idFromEmail(v) : s.login_id })); }} /></div>
+          <div className="field"><label htmlFor="bs-id">사원 ID (메일 앞부분 · 로그인할 때 씀)</label><input id="bs-id" className="inp" value={bs.login_id} onChange={e => setB('login_id', e.target.value)} /></div>
+          <div className="field"><label htmlFor="bs-no">사번 (첫 비밀번호 = k + 사번)</label><input id="bs-no" className="inp" value={bs.emp_no} onChange={e => setB('emp_no', e.target.value)} /></div>
           <div className="field"><label htmlFor="bs-dept">부서</label><input id="bs-dept" className="inp" value={bs.dept} onChange={e => setB('dept', e.target.value)} /></div>
           {err && <div className="err">{err}</div>}
-          <button className="btn pri" disabled={busy || !bs.name || !bs.login_id || !bs.email}>{busy ? <span className="spinner" /> : '등록하고 시작하기'}</button>
+          <button className="btn pri" disabled={busy || !bs.name || !bs.login_id || !bs.email || !bs.emp_no}>{busy ? <span className="spinner" /> : '등록하고 시작하기'}</button>
         </form>
       ) : (
         <form className="form" onSubmit={submit}>
           <h2>로그인</h2>
           <div className="field"><label htmlFor="login-id">사원 ID</label><input id="login-id" className="inp" value={id} onChange={e => setId(e.target.value)} autoComplete="username" autoFocus /></div>
           <div className="field"><label htmlFor="login-pw">비밀번호</label><input id="login-pw" className="inp" type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password" />
-            <span className="help">처음에는 비밀번호가 사원 ID와 같습니다. 로그인하면 바로 새 비밀번호를 정합니다.</span></div>
+            <span className="help">사원 ID는 회사 메일 앞부분입니다. 첫 비밀번호는 k + 사번이고(예: k23016), 로그인하면 바로 새 비밀번호를 정합니다.</span></div>
           {err && <div className="err">{err}</div>}
           <button className="btn pri" disabled={busy || !id || !pw}>{busy ? <span className="spinner" /> : '로그인'}</button>
         </form>
